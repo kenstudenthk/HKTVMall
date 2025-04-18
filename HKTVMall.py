@@ -37,7 +37,20 @@ def search_hktvmall(keywords, min_price, max_price):
             continue  # Move to the next keyword
 
         soup = BeautifulSoup(response.content, "html.parser")
-        product_listings = soup.find_all("div", class_="product-card")
+        product_listings = soup.find_all("div", class_="product-container")
+
+        for product in product_listings:
+            link_element = product.find("a", class_="product-link")
+            image_element = product.find("img", class_="product-image")
+            name_element = product.find("div", class_="product-name")
+            price_element = product.find("div", class_="product-price")
+
+            product_link = "https://www.hktvmall.com" + link_element['href']
+            image_url = image_element['src']
+            product_name = name_element.text.strip()
+            product_price = price_element.text.strip()
+
+        print(f"Name: {product_name}, Price: {product_price}, Link: {product_link}, Image: {image_url}")
 
         if not product_listings:
             st.warning(f"No products found for keyword '{keyword}'.")
