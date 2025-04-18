@@ -2,6 +2,10 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image  # Import Pillow for image handling
+import io
+import sys
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def search_hktvmall(keywords, min_price, max_price):
     """
@@ -50,7 +54,7 @@ def search_hktvmall(keywords, min_price, max_price):
             product_name = name_element.text.strip()
             product_price = price_element.text.strip()
 
-        print(f"Name: {product_name}, Price: {product_price}, Link: {product_link}, Image: {image_url}")
+        print(f"Name: {product_name}, Price: {product_price}, Link: {product_link}, Image: {image_url}".encode('utf-8').decode('utf-8'))
 
         if not product_listings:
             st.warning(f"No products found for keyword '{keyword}'.")
