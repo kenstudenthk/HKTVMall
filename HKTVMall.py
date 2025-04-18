@@ -5,7 +5,6 @@ from PIL import Image  # Import Pillow for image handling
 import io
 import sys
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def search_hktvmall(keywords, min_price, max_price):
     """
