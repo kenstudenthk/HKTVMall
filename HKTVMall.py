@@ -17,7 +17,7 @@ def search_hktvmall(keywords, min_price, max_price):
               and contains its name, price, image URL, and product link.
     """
 
-    base_url = "https://www.hktvmall.com/hktv/en/search"
+    base_url = "https://www.hktvmall.com/"
     results = []
 
     for keyword in keywords.split(","):  # Split keywords by comma
