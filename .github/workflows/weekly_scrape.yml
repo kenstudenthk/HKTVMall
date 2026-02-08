@@ -1,0 +1,51 @@
+name: Weekly Pet Food Deal Scrape
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Sunday 2AM UTC (10AM HKT)
+  workflow_dispatch:       # Manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install chromium --with-deps
+
+      - name: Run scraper
+        run: python -m src.scraper
+
+      - name: Run processor
+        run: python -m src.processor
+
+      - name: Send email digest
+        if: always()
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: python -m src.emailer
+
+      - name: Commit updated deals data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/deals.json data/raw_products.json
+          git diff --cached --quiet || git commit -m "Update pet food deals data [skip ci]"
+          git push

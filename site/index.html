@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HKTVmall Pet Food Deals</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>HKTVmall Pet Food Deals</h1>
+    <p id="scraped-date" class="scraped-date"></p>
+  </header>
+
+  <div class="metrics-bar">
+    <div class="metric">
+      <span class="metric-value" id="metric-total">0</span>
+      <span class="metric-label">Total Deals</span>
+    </div>
+    <div class="metric">
+      <span class="metric-value" id="metric-avg">N/A</span>
+      <span class="metric-label">Avg Discount</span>
+    </div>
+    <div class="metric">
+      <span class="metric-value" id="metric-best">N/A</span>
+      <span class="metric-label">Best Discount</span>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <aside class="filter-panel" id="filter-panel">
+      <div class="filter-panel-header">
+        <h2>Filters</h2>
+        <button class="filter-close-btn" id="filter-close-btn" aria-label="Close filters">&times;</button>
+      </div>
+
+      <div class="filter-section">
+        <label for="discount-slider">Minimum Discount: <strong id="discount-value">0%</strong></label>
+        <input type="range" id="discount-slider" min="0" max="90" value="0" step="5">
+      </div>
+
+      <div class="filter-section">
+        <h3>Category</h3>
+        <label class="checkbox-label">
+          <input type="checkbox" id="cat-dog" checked> Dog Food
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="cat-cat" checked> Cat Food
+        </label>
+      </div>
+
+      <div class="filter-section">
+        <h3>Brand</h3>
+        <input type="text" id="brand-search" class="brand-search" placeholder="Search brands...">
+        <div class="brand-list" id="brand-list"></div>
+      </div>
+
+      <div class="filter-section">
+        <h3>Price Range ($)</h3>
+        <div class="price-range-display">
+          <span id="price-min-display">$0</span>
+          <span id="price-max-display">$1000</span>
+        </div>
+        <div class="dual-range">
+          <input type="range" id="price-min" min="0" max="1000" value="0" step="1">
+          <input type="range" id="price-max" min="0" max="1000" value="1000" step="1">
+        </div>
+      </div>
+
+      <div class="filter-section">
+        <label for="sort-select">Sort by</label>
+        <select id="sort-select">
+          <option value="discount-desc">Discount % (high to low)</option>
+          <option value="price-asc">Price (low to high)</option>
+          <option value="price-desc">Price (high to low)</option>
+          <option value="name-asc">Name (A-Z)</option>
+        </select>
+      </div>
+
+      <div class="filter-section">
+        <label class="checkbox-label">
+          <input type="checkbox" id="in-stock-only"> In stock only
+        </label>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <button class="filter-toggle-btn" id="filter-toggle-btn">Filters</button>
+      <p class="results-status" id="results-status"></p>
+
+      <div class="product-grid" id="product-grid"></div>
+
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prev-btn" disabled>Prev</button>
+        <span class="page-indicator" id="page-indicator">Page 1 of 1</span>
+        <button class="page-btn" id="next-btn" disabled>Next</button>
+      </div>
+    </main>
+  </div>
+
+  <div class="filter-overlay" id="filter-overlay"></div>
+
+  <footer class="site-footer">
+    <p>Prices and availability are scraped from HKTVmall and may not reflect real-time data. For the most accurate information, please visit <a href="https://www.hktvmall.com" target="_blank" rel="noopener">hktvmall.com</a>.</p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

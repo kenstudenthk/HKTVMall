@@ -1,0 +1,80 @@
+[
+  {
+    "product_code": "P001",
+    "product_name": "Royal Canin Medium Adult Dog Food 15kg",
+    "brand": "Royal Canin",
+    "original_price": 599.00,
+    "sale_price": 449.00,
+    "discount_pct": 25.04,
+    "category": "dog_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P001",
+    "in_stock": true,
+    "scraped_date": "2025-01-15"
+  },
+  {
+    "product_code": "P002",
+    "product_name": "Whiskas Ocean Fish Adult Cat Food 7kg",
+    "brand": "Whiskas",
+    "original_price": 199.00,
+    "sale_price": 139.00,
+    "discount_pct": 30.15,
+    "category": "cat_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P002",
+    "in_stock": true,
+    "scraped_date": "2025-01-15"
+  },
+  {
+    "product_code": "P003",
+    "product_name": "Pedigree Dentastix Daily Oral Care for Large Dogs 56 Sticks",
+    "brand": "Pedigree",
+    "original_price": 289.00,
+    "sale_price": 189.00,
+    "discount_pct": 34.60,
+    "category": "dog_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P003",
+    "in_stock": false,
+    "scraped_date": "2025-01-15"
+  },
+  {
+    "product_code": "P004",
+    "product_name": "Hill's Science Diet Adult Indoor Cat Chicken Recipe 3.5kg",
+    "brand": "Hill's",
+    "original_price": 399.00,
+    "sale_price": 299.00,
+    "discount_pct": 25.06,
+    "category": "cat_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P004",
+    "in_stock": true,
+    "scraped_date": "2025-01-15"
+  },
+  {
+    "product_code": "P005",
+    "product_name": "Orijen Original Grain-Free Dry Dog Food 11.4kg",
+    "brand": "Orijen",
+    "original_price": 899.00,
+    "sale_price": 599.00,
+    "discount_pct": 33.37,
+    "category": "dog_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P005",
+    "in_stock": true,
+    "scraped_date": "2025-01-15"
+  },
+  {
+    "product_code": "P006",
+    "product_name": "Fancy Feast Classic Pate Variety Pack 24 Cans",
+    "brand": "Fancy Feast",
+    "original_price": 249.00,
+    "sale_price": 179.00,
+    "discount_pct": 28.11,
+    "category": "cat_food",
+    "image_url": "",
+    "product_url": "https://www.hktvmall.com/p/P006",
+    "in_stock": false,
+    "scraped_date": "2025-01-15"
+  }
+]
