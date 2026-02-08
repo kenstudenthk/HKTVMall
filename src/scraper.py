@@ -1,8 +1,8 @@
 """
-Playwright-based scraper that intercepts HKTVmall AJAX responses.
+Scraper that fetches HKTVmall product data via the cate-search API.
 
-Navigates to category pages in a real browser and captures the JSON
-responses from the internal /ajax/search_products endpoint.
+Calls the cate-search.hktvmall.com/query/products endpoint directly
+using Playwright's request API, paginating through all results.
 
 Usage:
     python -m src.scraper
@@ -11,16 +11,16 @@ Usage:
 import asyncio
 import json
 import logging
-import time
 
-from playwright.async_api import async_playwright, Response
-from playwright_stealth import stealth_async
+from playwright.async_api import async_playwright
 
 from src.config import (
+    API_TIMEOUT,
+    CATE_SEARCH_API_URL,
     CATEGORIES,
     DATA_DIR,
     MAX_PAGES,
-    NAVIGATION_TIMEOUT,
+    PAGE_SIZE,
     RAW_PRODUCTS_PATH,
     REQUEST_DELAY,
 )
@@ -32,91 +32,95 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-async def _capture_ajax_response(response: Response) -> dict | None:
-    """Return parsed JSON if this response is a search_products AJAX call."""
-    if "search_products" not in response.url:
-        return None
-    if response.status != 200:
-        log.warning("AJAX response status %d for %s", response.status, response.url)
-        return None
-    try:
-        return await response.json()
-    except Exception:
-        log.warning("Failed to parse AJAX JSON from %s", response.url)
-        return None
+def _normalize_product(product: dict) -> dict:
+    """Add promotionPrice from priceList for processor compatibility.
+
+    The cate-search API returns prices in priceList (BUY + DISCOUNT entries)
+    rather than separate price/promotionPrice fields.
+    """
+    price_list = product.get("priceList", [])
+    for entry in price_list:
+        if entry.get("priceType") == "DISCOUNT":
+            product["promotionPrice"] = {
+                "currencyIso": entry.get("currencyIso", "HKD"),
+                "value": entry.get("value"),
+                "formattedValue": entry.get("formattedValue", ""),
+            }
+            break
+    return product
 
 
-async def scrape_category(page, category_key: str, category_info: dict) -> list[dict]:
-    """Scrape all products for a single category via AJAX interception."""
+async def scrape_category(api_context, category_key: str, category_info: dict) -> list[dict]:
+    """Scrape all products for a single category via direct API calls."""
     label = category_info["label"]
-    search_url = category_info["search_url"]
+    query = category_info["query"]
     all_products: list[dict] = []
-    captured: dict | None = None
 
-    async def on_response(resp: Response):
-        nonlocal captured
-        data = await _capture_ajax_response(resp)
-        if data is not None:
-            captured = data
-
-    page.on("response", on_response)
-
-    # --- Page 0 (first load) ---
-    log.info("[%s] Loading first page: %s", label, search_url)
-    captured = None
-    await page.goto(search_url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
-
-    # Wait a bit for any late AJAX calls
-    await page.wait_for_timeout(3000)
-
-    if captured is None:
-        log.error("[%s] No AJAX response captured on first page. Aborting category.", label)
-        page.remove_listener("response", on_response)
+    # --- Page 0 ---
+    log.info("[%s] Fetching page 0...", label)
+    try:
+        resp = await api_context.post(
+            CATE_SEARCH_API_URL,
+            params={"query": query, "currentPage": "0", "pageSize": str(PAGE_SIZE)},
+            timeout=API_TIMEOUT,
+        )
+    except Exception as e:
+        log.error("[%s] API request failed on page 0: %s", label, e)
         return all_products
 
-    # Extract pagination info
-    pagination = captured.get("pagination", {})
+    if resp.status != 200:
+        log.error("[%s] API returned status %d on page 0", label, resp.status)
+        return all_products
+
+    data = await resp.json()
+    pagination = data.get("pagination", {})
     total_pages = pagination.get("numberOfPages", 1)
     total_results = pagination.get("totalNumberOfResults", 0)
-    log.info(
-        "[%s] Found %d total results across %d pages",
-        label, total_results, total_pages,
-    )
+    log.info("[%s] Found %d total results across %d pages", label, total_results, total_pages)
 
-    # Collect products from first page
-    products = captured.get("products", [])
+    products = data.get("products", [])
     for p in products:
+        _normalize_product(p)
         p["_category"] = category_key
     all_products.extend(products)
-    log.info("[%s] Page 0: captured %d products", label, len(products))
+    log.info("[%s] Page 0: fetched %d products", label, len(products))
 
     # --- Remaining pages ---
     pages_to_scrape = min(total_pages, MAX_PAGES)
     for page_num in range(1, pages_to_scrape):
         await asyncio.sleep(REQUEST_DELAY)
 
-        page_url = f"{search_url}&currentPage={page_num}"
-        log.info("[%s] Loading page %d/%d", label, page_num, pages_to_scrape - 1)
-
-        captured = None
+        log.info("[%s] Fetching page %d/%d...", label, page_num, pages_to_scrape - 1)
         try:
-            await page.goto(page_url, wait_until="networkidle", timeout=NAVIGATION_TIMEOUT)
-            await page.wait_for_timeout(2000)
+            resp = await api_context.post(
+                CATE_SEARCH_API_URL,
+                params={
+                    "query": query,
+                    "currentPage": str(page_num),
+                    "pageSize": str(PAGE_SIZE),
+                },
+                timeout=API_TIMEOUT,
+            )
         except Exception as e:
-            log.warning("[%s] Navigation error on page %d: %s", label, page_num, e)
+            log.warning("[%s] API request failed on page %d: %s", label, page_num, e)
             continue
 
-        if captured is None:
-            log.warning("[%s] No AJAX response on page %d, skipping", label, page_num)
+        if resp.status != 200:
+            log.warning("[%s] API returned status %d on page %d", label, resp.status, page_num)
             continue
 
-        products = captured.get("products", [])
+        data = await resp.json()
+        products = data.get("products", [])
+        if not products:
+            log.info("[%s] No more products at page %d, stopping", label, page_num)
+            break
+
         for p in products:
+            _normalize_product(p)
             p["_category"] = category_key
         all_products.extend(products)
-        log.info("[%s] Page %d: captured %d products (total: %d)", label, page_num, len(products), len(all_products))
+        log.info("[%s] Page %d: fetched %d products (total: %d)", label, page_num, len(products), len(all_products))
 
-    page.remove_listener("response", on_response)
     return all_products
 
 
@@ -127,27 +131,27 @@ async def run_scraper():
     all_products: list[dict] = []
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            locale="en-HK",
+        api_context = await pw.request.new_context(
+            extra_http_headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "https://www.hktvmall.com",
+                "Referer": "https://www.hktvmall.com/",
+            }
         )
-        page = await context.new_page()
-        await stealth_async(page)
 
         for cat_key, cat_info in CATEGORIES.items():
             try:
-                products = await scrape_category(page, cat_key, cat_info)
+                products = await scrape_category(api_context, cat_key, cat_info)
                 all_products.extend(products)
             except Exception as e:
                 log.error("Failed to scrape %s: %s", cat_key, e, exc_info=True)
 
-        await browser.close()
+        await api_context.dispose()
 
     log.info("Total raw products captured: %d", len(all_products))
 

@@ -9,36 +9,29 @@ DATA_DIR = PROJECT_ROOT / "data"
 RAW_PRODUCTS_PATH = DATA_DIR / "raw_products.json"
 DEALS_PATH = DATA_DIR / "deals.json"
 
-# --- HKTVmall AJAX API ---
-AJAX_API_URL = "https://www.hktvmall.com/hktv/en/ajax/search_products"
+# --- HKTVmall cate-search API ---
+CATE_SEARCH_API_URL = "https://cate-search.hktvmall.com/query/products"
 BASE_URL = "https://www.hktvmall.com"
 
 # Category codes (HKTVmall internal structure)
 CATEGORIES = {
     "dog_food": {
-        "code": "AA83100500000",
+        "code": "AA83100510000",
         "label": "Dog Food",
-        "search_url": (
-            "https://www.hktvmall.com/hktv/en/main/Pets/s/H0803001"
-            "?q=%3Arelevance%3Astreet%3Amain%3Acategory%3AAA83100500000"
-        ),
+        "query": ":relevance:category:AA83100510000:zone:pets:street:main:",
     },
     "cat_food": {
-        "code": "AA83200500000",
+        "code": "AA83200510000",
         "label": "Cat Food",
-        "search_url": (
-            "https://www.hktvmall.com/hktv/en/main/Pets/s/H0803001"
-            "?q=%3Arelevance%3Astreet%3Amain%3Acategory%3AAA83200500000"
-        ),
+        "query": ":relevance:category:AA83200510000:zone:pets:street:main:",
     },
 }
 
 # --- Scraper settings ---
-PAGE_SIZE = 600
-MAX_PAGES = 100
-REQUEST_DELAY = 2.0  # seconds between page navigations
-NAVIGATION_TIMEOUT = 60_000  # ms
-AJAX_WAIT_TIMEOUT = 30_000  # ms
+PAGE_SIZE = 60  # max allowed by cate-search API
+MAX_PAGES = 250
+REQUEST_DELAY = 1.0  # seconds between API requests
+API_TIMEOUT = 30_000  # ms
 
 # --- Email settings (from environment variables) ---
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "")
