@@ -17,6 +17,7 @@ const state = {
 
 // === DOM references ===
 const els = {
+  loader: document.getElementById("loader"),
   scrapedDate: document.getElementById("scraped-date"),
   metricTotal: document.getElementById("metric-total"),
   metricAvg: document.getElementById("metric-avg"),
@@ -350,7 +351,10 @@ function closeFilterPanel() {
 
 // === Init ===
 async function init() {
+  els.loader.style.display = "block";
   const deals = await fetchDeals();
+  els.loader.style.display = "none";
+
   state.allDeals = deals;
 
   if (deals.length > 0 && deals[0].scraped_date) {
