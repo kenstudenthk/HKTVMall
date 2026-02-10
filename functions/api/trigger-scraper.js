@@ -40,6 +40,8 @@ export async function onRequestPost(context) {
     // Trigger GitHub Actions workflow via workflow_dispatch
     const githubApiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
 
+    console.log(`Triggering workflow: ${GITHUB_OWNER}/${GITHUB_REPO} - ${WORKFLOW_FILE}`);
+
     const response = await fetch(githubApiUrl, {
       method: "POST",
       headers: {
@@ -71,12 +73,19 @@ export async function onRequestPost(context) {
     } else {
       const errorData = await response.text();
       console.error("GitHub API error:", response.status, errorData);
+      console.error("Attempted URL:", githubApiUrl);
 
       return new Response(
         JSON.stringify({
           success: false,
           error: `GitHub API error: ${response.status}`,
-          details: errorData
+          details: errorData,
+          attempted_url: githubApiUrl,
+          config: {
+            owner: GITHUB_OWNER,
+            repo: GITHUB_REPO,
+            workflow: WORKFLOW_FILE
+          }
         }),
         {
           status: response.status,
