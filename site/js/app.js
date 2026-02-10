@@ -19,6 +19,7 @@ const state = {
 const els = {
   loader: document.getElementById("loader"),
   scrapedDate: document.getElementById("scraped-date"),
+  updateButton: document.getElementById("update-button"),
   metricTotal: document.getElementById("metric-total"),
   metricAvg: document.getElementById("metric-avg"),
   metricBest: document.getElementById("metric-best"),
@@ -349,6 +350,43 @@ function closeFilterPanel() {
   els.filterOverlay.classList.remove("active");
 }
 
+// === Manual Update Button ===
+async function triggerScraper() {
+  const updateBtn = document.getElementById("update-button");
+  const btnText = updateBtn.querySelector(".button-text");
+  const btnLoading = updateBtn.querySelector(".button-loading");
+
+  // Disable button and show loading state
+  updateBtn.disabled = true;
+  btnText.style.display = "none";
+  btnLoading.style.display = "inline";
+
+  try {
+    const response = await fetch("/api/trigger-scraper", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      alert(`✓ ${result.message}\n\nThe scraper is now running. Results will be available in about 30 minutes.`);
+    } else {
+      alert(`✗ Failed to trigger scraper:\n${result.error}\n\n${result.details || ""}`);
+    }
+  } catch (error) {
+    console.error("Error triggering scraper:", error);
+    alert(`✗ Error triggering scraper:\n${error.message}\n\nPlease try again later.`);
+  } finally {
+    // Re-enable button
+    updateBtn.disabled = false;
+    btnText.style.display = "inline";
+    btnLoading.style.display = "none";
+  }
+}
+
 // === Init ===
 async function init() {
   els.loader.style.display = "block";
@@ -365,6 +403,12 @@ async function init() {
   setupPriceRange(deals);
   bindEvents();
   applyFiltersAndRender();
+
+  // Attach update button listener
+  const updateBtn = document.getElementById("update-button");
+  if (updateBtn) {
+    updateBtn.addEventListener("click", triggerScraper);
+  }
 }
 
 init();
