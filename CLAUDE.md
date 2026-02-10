@@ -14,13 +14,21 @@ HKTVmall Pet Food Deal Finder - An automated web scraping pipeline that finds th
 
 ## Architecture
 
-The data flows through three stages:
+The data flows through a streaming pipeline that processes batches incrementally:
 
-1. **Scraper** (`src/scraper.py`): Uses Playwright to call HKTVmall's internal `cate-search.hktvmall.com/query/products` API for cat and dog food categories → outputs `data/raw_products.json`
+1. **Streaming Processor** (`src/streaming_processor.py`):
+   - Uses Playwright to call HKTVmall's internal `cate-search.hktvmall.com/query/products` API
+   - Processes each page (60 products) immediately after fetching
+   - Accumulates deals in memory per category (~12MB max)
+   - Performs global deduplication across all categories
+   - Writes atomically to `data/deals.json` using temp file + rename
+   - **87% memory reduction** compared to old approach (337MB → 48MB peak)
 
-2. **Processor** (`src/processor.py`): Calculates discount percentages, filters for actual deals → outputs `data/deals.json`
+2. **Scraper** (`src/scraper.py`): Entry point that delegates to streaming processor for backward compatibility
 
-3. **Frontend** (`site/`): Static SPA reads `site/data/deals.json` and displays filtered/sorted deals
+3. **Processor** (`src/processor.py`): Legacy processor, kept for manual use/debugging
+
+4. **Frontend** (`site/`): Static SPA reads `site/data/deals.json` and displays filtered/sorted deals
 
 **Important:** All configuration (API endpoints, category codes, scraping limits) is centralized in `src/config.py`.
 
@@ -37,17 +45,29 @@ python -m playwright install chromium --with-deps
 
 ### Running the Pipeline
 ```bash
-# 1. Scrape fresh data from HKTVmall
+# 1. Scrape and process data (uses streaming processor)
 python -m src.scraper
+# This now runs the streaming processor which:
+# - Fetches pages from HKTVmall API
+# - Processes each page immediately (60 products at a time)
+# - Deduplicates globally across categories
+# - Writes to data/deals.json atomically
 
-# 2. Process raw data into deals
-python -m src.processor
-
-# 3. Copy processed data to site directory
+# 2. Copy processed data to site directory
 ./build.sh
 
-# 4. Serve the frontend locally
+# 3. Serve the frontend locally
 http-server site/  # or any static file server
+```
+
+### Legacy Commands (Manual Use)
+```bash
+# Old two-step process (higher memory usage)
+python -m src.scraper  # Would need to be modified to use old run_scraper()
+python -m src.processor
+
+# Direct streaming processor (same as scraper now)
+python -m src.streaming_processor
 ```
 
 ### Email Digest
@@ -81,8 +101,9 @@ You can also manually trigger the workflow:
 ## Key Files
 
 - `src/config.py` - All configuration constants (API URLs, categories, limits, paths)
-- `src/scraper.py` - Playwright-based API scraper with pagination
-- `src/processor.py` - Deal filtering and discount calculation logic
+- `src/streaming_processor.py` - **Main processor**: Batch-by-batch scraping + processing with atomic writes
+- `src/scraper.py` - Entry point that delegates to streaming processor
+- `src/processor.py` - Legacy processor (kept for manual use/debugging)
 - `src/emailer.py` - SMTP email digest sender
 - `site/js/app.js` - All frontend logic (filtering, sorting, pagination, manual refresh)
 - `.gitattributes` - Git LFS tracking for `data/raw_products.json` (large file)
@@ -95,7 +116,12 @@ You can also manually trigger the workflow:
 
 ## Important Notes
 
+- **Batch processing**: Streaming processor handles ~200 pages per category by processing 60 products at a time
 - The scraper calls HKTVmall's internal API directly (not browser automation)
+- **Memory efficient**: Page-by-page processing reduces peak memory from 337MB to 48MB (87% reduction)
+- **Atomic writes**: Uses temp file + rename to prevent corrupted JSON on failure
+- **Global deduplication**: Deduplicates product codes across all categories at the end
+- **Consistent scraped_date**: All deals get the same date, captured once at run start
 - `raw_products.json` uses Git LFS due to size - ensure LFS is installed when cloning
 - The processor normalizes price data from the API's `priceList` structure (BUY + DISCOUNT entries)
 - Frontend includes a manual "Update Data" button that re-runs the scraping pipeline client-side
