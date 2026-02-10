@@ -165,7 +165,11 @@ async def run_scraper():
 
 
 def main():
-    asyncio.run(run_scraper())
+    """Run the scraper using streaming processor for memory efficiency."""
+    from src.streaming_processor import run_streaming_processor
+
+    log.info("Using streaming processor for batch-by-batch processing")
+    asyncio.run(run_streaming_processor())
 
 
 if __name__ == "__main__":
