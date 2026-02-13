@@ -173,8 +173,8 @@ async function pollForNewData() {
   }
 
   try {
-    // Add cache-busting parameter
-    const resp = await fetch(`data/deals.json?t=${Date.now()}`);
+    // R2 has fresh data immediately after scraping — no need to wait for git redeploy
+    const resp = await fetch(`/api/deals?t=${Date.now()}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
     const data = await resp.json();
@@ -330,6 +330,14 @@ function resumePollingIfNeeded() {
 
 // === Data fetching ===
 async function fetchDeals() {
+  // Try R2-backed endpoint first, fall back to static file
+  try {
+    const resp = await fetch("/api/deals");
+    if (resp.ok) return await resp.json();
+  } catch (err) {
+    console.warn("R2 endpoint unavailable, falling back to static file:", err);
+  }
+
   try {
     const resp = await fetch("data/deals.json");
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
