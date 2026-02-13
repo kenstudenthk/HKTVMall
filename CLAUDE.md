@@ -18,7 +18,8 @@ HKTVmall Pet Food Deal Finder - An automated web scraping pipeline that finds th
 ### Data Pipeline
 
 ```
-HKTVmall API → streaming_processor.py → data/deals.json → build.sh → site/data/deals.json → Browser
+HKTVmall API → streaming_processor.py → data/deals.json → R2 upload (fast) → /api/deals → Browser
+                                                         → git commit → build.sh → site/data/deals.json (fallback)
 ```
 
 1. **Streaming Processor** (`src/streaming_processor.py`) — the main workhorse:
@@ -98,6 +99,7 @@ Frontend config is inline in `app.js` (`PRODUCTS_PER_PAGE=30`, polling intervals
 `.github/workflows/weekly_scrape.yml`:
 - **Schedule**: Sundays 2AM UTC (10AM HKT) + manual `workflow_dispatch`
 - **Steps**: checkout → Python 3.12 → install deps → install Playwright → scraper → processor → commit & push
+- **R2 upload**: After processor, uploads `deals.json` to R2 via AWS CLI (skips gracefully if secrets not configured)
 - **Permissions**: `contents: write`
 - **Timeout**: 60 minutes
 - Email digest step is commented out
@@ -106,7 +108,10 @@ Frontend config is inline in `app.js` (`PRODUCTS_PER_PAGE=30`, polling intervals
 
 - Static site served from `site/` directory
 - `build.sh` is the build command (copies `data/deals.json` → `site/data/`)
+- **R2 bucket**: `hktv` — stores `deals.json` for fast serving via Pages Function
+- Pages Function at `functions/api/deals.js` serves deals.json from R2 (`DEALS_BUCKET` binding)
 - Pages Function at `functions/api/trigger-scraper.js` triggers GitHub Actions
+- Frontend fetches `/api/deals` first (R2), falls back to static `data/deals.json`
 - **Required env vars** (set in Cloudflare Pages dashboard): `GITHUB_TOKEN` (PAT with `workflow` scope), `GITHUB_OWNER`, `GITHUB_REPO`
 - See `CLOUDFLARE_SETUP.md` for detailed setup instructions
 
@@ -126,5 +131,6 @@ Frontend config is inline in `app.js` (`PRODUCTS_PER_PAGE=30`, polling intervals
 - `src/scraper.py` — entry point, delegates to streaming processor
 - `site/js/app.js` — all frontend logic (filtering, sorting, pagination, polling, toasts)
 - `site/css/style.css` — responsive styles (3-col → 2-col → 1-col, mobile drawer)
+- `functions/api/deals.js` — Pages Function serving deals.json from R2
 - `functions/api/trigger-scraper.js` — Cloudflare Pages Function for manual trigger
 - `.github/workflows/weekly_scrape.yml` — CI/CD automation
