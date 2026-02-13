@@ -4,128 +4,127 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-HKTVmall Pet Food Deal Finder - An automated web scraping pipeline that finds the best pet food deals from HKTVmall (Hong Kong TV Mall). The system scrapes product data, processes it to identify deals, and displays results via a static frontend.
+HKTVmall Pet Food Deal Finder - An automated web scraping pipeline that finds the best pet food deals from HKTVmall (Hong Kong TV Mall). The system scrapes product data, processes it to identify deals, and displays results via a static frontend deployed on Cloudflare Pages.
 
 **Tech Stack:**
-- Backend: Python 3.12 + Playwright
-- Frontend: Vanilla JavaScript, HTML5, CSS3
-- Automation: GitHub Actions (weekly schedule)
-- Data Storage: JSON files (raw_products.json via Git LFS, deals.json)
+- Backend: Python 3.12 + Playwright (async API calls, not browser automation)
+- Frontend: Vanilla JavaScript (ES6 module), HTML5, CSS3 — no build tooling
+- Hosting: Cloudflare Pages (static site + Pages Functions)
+- Automation: GitHub Actions (weekly schedule + manual dispatch)
+- Data Storage: JSON files (`raw_products.json` via Git LFS, `deals.json`)
 
 ## Architecture
 
-The data flows through a streaming pipeline that processes batches incrementally:
+### Data Pipeline
 
-1. **Streaming Processor** (`src/streaming_processor.py`):
-   - Uses Playwright to call HKTVmall's internal `cate-search.hktvmall.com/query/products` API
-   - Processes each page (60 products) immediately after fetching
-   - Accumulates deals in memory per category (~12MB max)
-   - Performs global deduplication across all categories
-   - Writes atomically to `data/deals.json` using temp file + rename
-   - **87% memory reduction** compared to old approach (337MB → 48MB peak)
+```
+HKTVmall API → streaming_processor.py → data/deals.json → build.sh → site/data/deals.json → Browser
+```
 
-2. **Scraper** (`src/scraper.py`): Entry point that delegates to streaming processor for backward compatibility
+1. **Streaming Processor** (`src/streaming_processor.py`) — the main workhorse:
+   - Calls HKTVmall's internal `cate-search.hktvmall.com/query/products` API via Playwright request context
+   - Processes each page (60 products) immediately after fetching — no full dataset in memory
+   - Filters for products with active discounts, calculates discount percentages
+   - Global deduplication by `product_code` across all categories, sorts by discount% descending
+   - Atomic writes to `data/deals.json` (temp file + rename)
+   - Peak memory: ~48MB (vs 337MB legacy approach)
 
-3. **Processor** (`src/processor.py`): Legacy processor, kept for manual use/debugging
+2. **Scraper** (`src/scraper.py`) — entry point that delegates to `streaming_processor.run_streaming_processor()`
 
-4. **Frontend** (`site/`): Static SPA reads `site/data/deals.json` and displays filtered/sorted deals
+3. **Processor** (`src/processor.py`) — legacy batch processor, kept for manual debugging only
 
-**Important:** All configuration (API endpoints, category codes, scraping limits) is centralized in `src/config.py`.
+4. **Frontend** (`site/`) — SPA that fetches `data/deals.json` and renders a filterable dashboard
+
+5. **Trigger Function** (`functions/api/trigger-scraper.js`) — Cloudflare Pages Function that triggers GitHub Actions via workflow_dispatch
+
+### Frontend Architecture (`site/js/app.js`)
+
+Single 733-line ES6 module handling:
+- **State object** with allDeals, filteredDeals, currentPage, filters, updateStatus
+- **Filtering**: discount%, category, brand, price range, stock status
+- **Sorting**: discount desc, price asc/desc, name A-Z
+- **Pagination**: 30 products/page
+- **Manual update trigger** → polls for new data with exponential backoff (2min→3min→5min, 40min timeout)
+- **localStorage persistence** for polling state across page refreshes
+- **Toast notifications** and **status banner** with countdown timer
+
+All user-facing text is sanitized via `escapeHTML()` to prevent XSS.
 
 ## Development Commands
 
 ### Setup
 ```bash
-# Install Python dependencies
 pip install -r requirements.txt
-
-# Install Playwright browser (required for scraper)
 python -m playwright install chromium --with-deps
 ```
 
-### Running the Pipeline
+### Run Pipeline
 ```bash
-# 1. Scrape and process data (uses streaming processor)
+# Scrape + process (streaming, memory-efficient)
 python -m src.scraper
-# This now runs the streaming processor which:
-# - Fetches pages from HKTVmall API
-# - Processes each page immediately (60 products at a time)
-# - Deduplicates globally across categories
-# - Writes to data/deals.json atomically
 
-# 2. Copy processed data to site directory
+# Copy deals to site directory
 ./build.sh
 
-# 3. Serve the frontend locally
-http-server site/  # or any static file server
+# Serve locally
+http-server site/    # or any static file server on port 8080
 ```
 
-### Legacy Commands (Manual Use)
+### Legacy (manual debugging only)
 ```bash
-# Old two-step process (higher memory usage)
-python -m src.scraper  # Would need to be modified to use old run_scraper()
-python -m src.processor
-
-# Direct streaming processor (same as scraper now)
-python -m src.streaming_processor
+python -m src.processor    # Batch-processes data/raw_products.json → data/deals.json
 ```
 
-### Email Digest
+### Email Digest (currently disabled in CI)
 ```bash
-# Requires environment variables: EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENT
 export EMAIL_SENDER="your-email@gmail.com"
 export EMAIL_PASSWORD="your-app-password"
 export EMAIL_RECIPIENT="recipient@example.com"
 python -m src.emailer
 ```
 
+## Configuration
+
+All backend settings centralized in `src/config.py`:
+- **API**: `CATE_SEARCH_API_URL`, `PAGE_SIZE=60`, `MAX_PAGES=250`, `REQUEST_DELAY=1.0s`, `API_TIMEOUT=30000ms`
+- **Categories**: Dog food (`AA83100510000`), Cat food (`AA83200510000`)
+- **Paths**: `DATA_DIR`, `RAW_PRODUCTS_PATH`, `DEALS_PATH`
+- **Email**: SMTP via Gmail (credentials from env vars)
+
+Frontend config is inline in `app.js` (`PRODUCTS_PER_PAGE=30`, polling intervals).
+
 ## GitHub Actions Workflow
 
-The repository uses automated weekly scraping via `.github/workflows/weekly_scrape.yml`:
-- **Schedule:** Sundays at 2AM UTC (10AM HKT)
-- **Sequence:** scraper → processor → emailer → commit & push updated data
-- **Secrets required:** `EMAIL_SENDER`, `EMAIL_PASSWORD`, `EMAIL_RECIPIENT` (set in repo settings)
+`.github/workflows/weekly_scrape.yml`:
+- **Schedule**: Sundays 2AM UTC (10AM HKT) + manual `workflow_dispatch`
+- **Steps**: checkout → Python 3.12 → install deps → install Playwright → scraper → processor → commit & push
+- **Permissions**: `contents: write`
+- **Timeout**: 60 minutes
+- Email digest step is commented out
 
-### Viewing Logs and Errors
+## Cloudflare Pages
 
-To check workflow execution status and troubleshoot errors:
-1. Go to the **Actions** tab on GitHub: `https://github.com/{owner}/HKTVMall/actions`
-2. Click on the specific workflow run to view detailed logs
-3. Each step (scraper, processor, emailer, commit) has expandable logs
-4. Failed steps will be highlighted in red with error details
+- Static site served from `site/` directory
+- `build.sh` is the build command (copies `data/deals.json` → `site/data/`)
+- Pages Function at `functions/api/trigger-scraper.js` triggers GitHub Actions
+- **Required env vars** (set in Cloudflare Pages dashboard): `GITHUB_TOKEN` (PAT with `workflow` scope), `GITHUB_OWNER`, `GITHUB_REPO`
+- See `CLOUDFLARE_SETUP.md` for detailed setup instructions
 
-You can also manually trigger the workflow:
-1. Navigate to Actions tab → "Weekly Pet Food Deal Scrape"
-2. Click "Run workflow" button → select branch → Run
+## Key Implementation Details
+
+- The scraper uses `_normalize_product()` to convert the API's `priceList` format (BUY + DISCOUNT entries) into the `promotionPrice` field
+- Products without both original and promotion prices are filtered out
+- `scraped_date` is captured once at run start for consistency across all records
+- `raw_products.json` (~312MB) is tracked with Git LFS — ensure LFS is installed when cloning
+- No test framework — verification is manual (check `deals.json` output, browser DevTools, GitHub Actions logs)
+- Repository owner: `kenstudenthk`, repo name: `HKTVMall`
 
 ## Key Files
 
-- `src/config.py` - All configuration constants (API URLs, categories, limits, paths)
-- `src/streaming_processor.py` - **Main processor**: Batch-by-batch scraping + processing with atomic writes
-- `src/scraper.py` - Entry point that delegates to streaming processor
-- `src/processor.py` - Legacy processor (kept for manual use/debugging)
-- `src/emailer.py` - SMTP email digest sender
-- `site/js/app.js` - All frontend logic (filtering, sorting, pagination, manual trigger, polling & auto-refresh)
-- `.gitattributes` - Git LFS tracking for `data/raw_products.json` (large file)
-
-## Data Files
-
-- `data/raw_products.json` - Raw scraped products (tracked with Git LFS)
-- `data/deals.json` - Filtered deals with discount calculations
-- `site/data/deals.json` - Copy of deals.json for frontend (created by `build.sh`)
-
-## Important Notes
-
-- **Batch processing**: Streaming processor handles ~200 pages per category by processing 60 products at a time
-- The scraper calls HKTVmall's internal API directly (not browser automation)
-- **Memory efficient**: Page-by-page processing reduces peak memory from 337MB to 48MB (87% reduction)
-- **Atomic writes**: Uses temp file + rename to prevent corrupted JSON on failure
-- **Global deduplication**: Deduplicates product codes across all categories at the end
-- **Consistent scraped_date**: All deals get the same date, captured once at run start
-- `raw_products.json` uses Git LFS due to size - ensure LFS is installed when cloning
-- The processor normalizes price data from the API's `priceList` structure (BUY + DISCOUNT entries)
-- Frontend includes a manual "Manual Update" button that triggers the GitHub Actions scraper via `/api/trigger-scraper` (Cloudflare Pages Function)
-- **Update polling system**: After triggering a scrape, the frontend polls `deals.json` with exponential backoff (2min → 3min → 5min intervals, 40min timeout) to detect new data and auto-refreshes the page
-- **Polling persistence**: Update status is stored in localStorage so polling resumes across page refreshes
-- **Toast notifications**: Slide-in notifications for scraper trigger success/failure, new data detection, and timeout errors
-- **Status banner**: Sticky banner with countdown timer shown during active updates, with cancel button
+- `src/config.py` — all configuration constants
+- `src/streaming_processor.py` — main processor (fetch + process + deduplicate + atomic write)
+- `src/scraper.py` — entry point, delegates to streaming processor
+- `site/js/app.js` — all frontend logic (filtering, sorting, pagination, polling, toasts)
+- `site/css/style.css` — responsive styles (3-col → 2-col → 1-col, mobile drawer)
+- `functions/api/trigger-scraper.js` — Cloudflare Pages Function for manual trigger
+- `.github/workflows/weekly_scrape.yml` — CI/CD automation
