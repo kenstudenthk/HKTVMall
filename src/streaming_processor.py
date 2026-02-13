@@ -30,6 +30,7 @@ from src.config import (
     MAX_PAGES,
     PAGE_SIZE,
     REQUEST_DELAY,
+    UPLOAD_BATCH_SIZE,
 )
 
 try:
@@ -286,11 +287,20 @@ async def scrape_and_process_category(
     api_context,
     category_key: str,
     category_info: dict,
-    scraped_date: str
+    scraped_date: str,
+    all_deals: list[dict] | None = None,
+    on_batch=None,
 ) -> list[dict]:
     """Scrape all pages for a category, processing each page immediately.
 
-    Returns list of all deals for this category.
+    Args:
+        all_deals: Shared accumulator list. New deals are appended here so that
+                   on_batch callbacks can flush *all* deals collected so far
+                   (across categories).
+        on_batch: Optional callback called every UPLOAD_BATCH_SIZE pages
+                  for intermediate writes/uploads.
+
+    Returns list of deals found in this category.
     """
     label = category_info["label"]
     query = category_info["query"]
@@ -326,6 +336,8 @@ async def scrape_and_process_category(
         deal = process_product(product, scraped_date)
         if deal:
             category_deals.append(deal)
+            if all_deals is not None:
+                all_deals.append(deal)
 
     log.info("[%s] Page 0: processed %d deals from %d products", label, len(category_deals), len(products))
 
@@ -346,10 +358,17 @@ async def scrape_and_process_category(
             break
 
         category_deals.extend(page_deals)
+        if all_deals is not None:
+            all_deals.extend(page_deals)
         log.info(
             "[%s] Page %d: processed %d deals (total: %d)",
             label, page_num, len(page_deals), len(category_deals)
         )
+
+        # Intermediate upload every UPLOAD_BATCH_SIZE pages
+        if on_batch and (page_num % UPLOAD_BATCH_SIZE == 0):
+            log.info("[%s] Batch checkpoint at page %d", label, page_num)
+            on_batch()
 
     return category_deals
 
@@ -399,19 +418,24 @@ async def run_streaming_processor():
             }
         )
 
+        def flush_intermediate():
+            """Deduplicate, apply last_updated, write locally, upload to R2."""
+            intermediate = deduplicate_and_sort(list(all_deals))
+            apply_last_updated(intermediate, previous_lookup, scraped_date)
+            atomic_write_json(DEALS_PATH, intermediate)
+            upload_to_r2(intermediate)
+
         for cat_key, cat_info in CATEGORIES.items():
             try:
                 deals = await scrape_and_process_category(
-                    api_context, cat_key, cat_info, scraped_date
+                    api_context, cat_key, cat_info, scraped_date,
+                    all_deals=all_deals,
+                    on_batch=flush_intermediate,
                 )
-                all_deals.extend(deals)
                 log.info(f"[{cat_info['label']}] Completed: {len(deals)} deals")
 
-                # Incremental: deduplicate, apply last_updated, write & upload
-                intermediate = deduplicate_and_sort(list(all_deals))
-                apply_last_updated(intermediate, previous_lookup, scraped_date)
-                atomic_write_json(DEALS_PATH, intermediate)
-                upload_to_r2(intermediate)
+                # Upload after each category completes too
+                flush_intermediate()
             except Exception as e:
                 log.error(f"[{cat_info['label']}] Failed: {e}", exc_info=True)
                 failed_categories.append(cat_key)
