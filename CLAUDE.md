@@ -105,7 +105,7 @@ You can also manually trigger the workflow:
 - `src/scraper.py` - Entry point that delegates to streaming processor
 - `src/processor.py` - Legacy processor (kept for manual use/debugging)
 - `src/emailer.py` - SMTP email digest sender
-- `site/js/app.js` - All frontend logic (filtering, sorting, pagination, manual refresh)
+- `site/js/app.js` - All frontend logic (filtering, sorting, pagination, manual trigger, polling & auto-refresh)
 - `.gitattributes` - Git LFS tracking for `data/raw_products.json` (large file)
 
 ## Data Files
@@ -124,4 +124,8 @@ You can also manually trigger the workflow:
 - **Consistent scraped_date**: All deals get the same date, captured once at run start
 - `raw_products.json` uses Git LFS due to size - ensure LFS is installed when cloning
 - The processor normalizes price data from the API's `priceList` structure (BUY + DISCOUNT entries)
-- Frontend includes a manual "Update Data" button that re-runs the scraping pipeline client-side
+- Frontend includes a manual "Manual Update" button that triggers the GitHub Actions scraper via `/api/trigger-scraper` (Cloudflare Pages Function)
+- **Update polling system**: After triggering a scrape, the frontend polls `deals.json` with exponential backoff (2min → 3min → 5min intervals, 40min timeout) to detect new data and auto-refreshes the page
+- **Polling persistence**: Update status is stored in localStorage so polling resumes across page refreshes
+- **Toast notifications**: Slide-in notifications for scraper trigger success/failure, new data detection, and timeout errors
+- **Status banner**: Sticky banner with countdown timer shown during active updates, with cancel button

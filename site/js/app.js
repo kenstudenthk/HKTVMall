@@ -13,6 +13,14 @@ const state = {
     inStockOnly: false,
     sort: "discount-desc",
   },
+  updateStatus: {
+    isPolling: false,
+    triggerTime: null,
+    lastScrapedDate: null,
+    pollInterval: null,
+    pollCount: 0,
+    countdownInterval: null,
+  },
 };
 
 // === DOM references ===
@@ -20,6 +28,8 @@ const els = {
   loader: document.getElementById("loader"),
   scrapedDate: document.getElementById("scraped-date"),
   updateButton: document.getElementById("update-button"),
+  statusBanner: document.getElementById("status-banner"),
+  toastContainer: document.getElementById("toast-container"),
   metricTotal: document.getElementById("metric-total"),
   metricAvg: document.getElementById("metric-avg"),
   metricBest: document.getElementById("metric-best"),
@@ -54,6 +64,268 @@ function escapeHTML(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// === Toast Notifications ===
+function showToast(message, type = "info") {
+  const validTypes = ["info", "success", "error"];
+  const safeType = validTypes.includes(type) ? type : "info";
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${safeType}`;
+  toast.innerHTML = `
+    <div class="toast-icon"></div>
+    <div class="toast-message">${escapeHTML(message)}</div>
+    <button class="toast-close" aria-label="Close">&times;</button>
+  `;
+
+  els.toastContainer.appendChild(toast);
+
+  const closeBtn = toast.querySelector(".toast-close");
+  const autoDismiss = setTimeout(() => {
+    if (toast.parentNode) {
+      toast.remove();
+    }
+  }, 5000);
+
+  closeBtn.addEventListener("click", () => {
+    clearTimeout(autoDismiss);
+    toast.remove();
+  });
+}
+
+// === Status Banner ===
+function renderStatusBanner() {
+  const { triggerTime, pollCount } = state.updateStatus;
+
+  if (!triggerTime) {
+    hideStatusBanner();
+    return;
+  }
+
+  const elapsed = Date.now() - triggerTime;
+  const elapsedMinutes = Math.floor(elapsed / 60000);
+  const estimatedTotal = 30; // minutes
+  const remaining = Math.max(0, estimatedTotal - elapsedMinutes);
+
+  els.statusBanner.innerHTML = `
+    <div class="status-banner-content">
+      <span class="status-banner-icon">🔄</span>
+      <span>Data is being updated...</span>
+      <span class="countdown-timer">Estimated completion in ~${remaining} minutes</span>
+    </div>
+    <button class="status-banner-cancel" id="cancel-polling">Cancel</button>
+  `;
+
+  els.statusBanner.classList.remove("hidden");
+
+  // Bind cancel button
+  const cancelBtn = document.getElementById("cancel-polling");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", stopPolling);
+  }
+}
+
+function hideStatusBanner() {
+  els.statusBanner.classList.add("hidden");
+  els.statusBanner.innerHTML = "";
+}
+
+function updateCountdown() {
+  if (!state.updateStatus.isPolling || !state.updateStatus.triggerTime) return;
+
+  const elapsed = Date.now() - state.updateStatus.triggerTime;
+  const elapsedMinutes = Math.floor(elapsed / 60000);
+  const estimatedTotal = 30;
+  const remaining = Math.max(0, estimatedTotal - elapsedMinutes);
+
+  const timerEl = document.querySelector(".countdown-timer");
+  if (timerEl) {
+    timerEl.textContent = `Estimated completion in ~${remaining} minutes`;
+  }
+}
+
+// === Polling Infrastructure ===
+function getNextPollDelay(pollCount) {
+  // First 10 minutes: poll every 2 minutes (5 polls)
+  if (pollCount < 5) return 2 * 60 * 1000; // 2 minutes
+
+  // Next 15 minutes: poll every 3 minutes (5 polls)
+  if (pollCount < 10) return 3 * 60 * 1000; // 3 minutes
+
+  // After that: poll every 5 minutes (4 polls)
+  return 5 * 60 * 1000; // 5 minutes
+}
+
+async function pollForNewData() {
+  if (!state.updateStatus.isPolling) return;
+
+  const maxPolls = 14; // Total polls: 5 + 5 + 4 = 14
+  const maxDuration = 40 * 60 * 1000; // 40 minutes
+
+  const elapsed = Date.now() - state.updateStatus.triggerTime;
+
+  // Timeout check
+  if (elapsed > maxDuration || state.updateStatus.pollCount >= maxPolls) {
+    showToast("Update is taking longer than expected. Check GitHub Actions or try again.", "error");
+    stopPolling();
+    return;
+  }
+
+  try {
+    // Add cache-busting parameter
+    const resp = await fetch(`data/deals.json?t=${Date.now()}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const data = await resp.json();
+
+    if (Array.isArray(data) && data.length > 0 && data[0].scraped_date) {
+      const newDate = data[0].scraped_date;
+
+      // Check if data has been updated
+      if (newDate !== state.updateStatus.lastScrapedDate) {
+        onNewDataDetected();
+        return;
+      }
+    }
+
+    // Schedule next poll
+    state.updateStatus.pollCount++;
+    saveUpdateStatusToLocalStorage();
+
+    const delay = getNextPollDelay(state.updateStatus.pollCount);
+    state.updateStatus.pollInterval = setTimeout(pollForNewData, delay);
+
+  } catch (err) {
+    console.error("Polling error:", err);
+
+    // Retry logic - don't count failed polls
+    const delay = 30 * 1000; // Retry after 30 seconds
+    state.updateStatus.pollInterval = setTimeout(pollForNewData, delay);
+  }
+}
+
+function onNewDataDetected() {
+  showToast("New deals available! Refreshing page...", "success");
+  stopPolling();
+
+  // Reload page after 2 seconds
+  setTimeout(() => {
+    window.location.reload();
+  }, 2000);
+}
+
+function startPollingForUpdates() {
+  // Store current scraped_date as baseline
+  if (state.allDeals.length > 0 && state.allDeals[0].scraped_date) {
+    state.updateStatus.lastScrapedDate = state.allDeals[0].scraped_date;
+  }
+
+  state.updateStatus.isPolling = true;
+  state.updateStatus.triggerTime = Date.now();
+  state.updateStatus.pollCount = 0;
+
+  saveUpdateStatusToLocalStorage();
+  renderStatusBanner();
+
+  // Start countdown timer (update every second)
+  state.updateStatus.countdownInterval = setInterval(updateCountdown, 1000);
+
+  // Start first poll after 2 minutes
+  const initialDelay = 2 * 60 * 1000;
+  state.updateStatus.pollInterval = setTimeout(pollForNewData, initialDelay);
+
+  showToast("Scraper started successfully! Checking for updates automatically...", "info");
+}
+
+function stopPolling() {
+  state.updateStatus.isPolling = false;
+
+  if (state.updateStatus.pollInterval) {
+    clearTimeout(state.updateStatus.pollInterval);
+    state.updateStatus.pollInterval = null;
+  }
+
+  if (state.updateStatus.countdownInterval) {
+    clearInterval(state.updateStatus.countdownInterval);
+    state.updateStatus.countdownInterval = null;
+  }
+
+  hideStatusBanner();
+  clearUpdateStatusFromLocalStorage();
+}
+
+// === localStorage Persistence ===
+function saveUpdateStatusToLocalStorage() {
+  const statusData = {
+    isPolling: state.updateStatus.isPolling,
+    triggerTime: state.updateStatus.triggerTime,
+    lastScrapedDate: state.updateStatus.lastScrapedDate,
+    pollCount: state.updateStatus.pollCount,
+    lastPollTime: Date.now(),
+  };
+
+  try {
+    localStorage.setItem("updateStatus", JSON.stringify(statusData));
+  } catch (err) {
+    console.error("Failed to save update status to localStorage:", err);
+  }
+}
+
+function clearUpdateStatusFromLocalStorage() {
+  try {
+    localStorage.removeItem("updateStatus");
+  } catch (err) {
+    console.error("Failed to clear update status from localStorage:", err);
+  }
+}
+
+function resumePollingIfNeeded() {
+  try {
+    const statusStr = localStorage.getItem("updateStatus");
+    if (!statusStr) return;
+
+    const statusData = JSON.parse(statusStr);
+
+    // Validate data
+    if (!statusData.isPolling || !statusData.triggerTime) {
+      clearUpdateStatusFromLocalStorage();
+      return;
+    }
+
+    const elapsed = Date.now() - statusData.triggerTime;
+    const maxDuration = 40 * 60 * 1000; // 40 minutes
+
+    // Check if update is still within timeout window
+    if (elapsed > maxDuration) {
+      clearUpdateStatusFromLocalStorage();
+      return;
+    }
+
+    // Resume polling
+    state.updateStatus.isPolling = true;
+    state.updateStatus.triggerTime = statusData.triggerTime;
+    state.updateStatus.lastScrapedDate = statusData.lastScrapedDate;
+    state.updateStatus.pollCount = statusData.pollCount;
+
+    renderStatusBanner();
+
+    // Start countdown timer
+    state.updateStatus.countdownInterval = setInterval(updateCountdown, 1000);
+
+    // Calculate next poll time based on when the last poll actually happened
+    const lastPollTime = statusData.lastPollTime || statusData.triggerTime;
+    const timeSinceLastPoll = Date.now() - lastPollTime;
+    const nextDelay = Math.max(0, getNextPollDelay(state.updateStatus.pollCount) - timeSinceLastPoll);
+
+    state.updateStatus.pollInterval = setTimeout(pollForNewData, nextDelay);
+
+    showToast("Update in progress (resumed)", "info");
+
+  } catch (err) {
+    console.error("Failed to resume polling:", err);
+    clearUpdateStatusFromLocalStorage();
+  }
 }
 
 // === Data fetching ===
@@ -352,6 +624,12 @@ function closeFilterPanel() {
 
 // === Manual Update Button ===
 async function triggerScraper() {
+  // Prevent triggering while already polling
+  if (state.updateStatus.isPolling) {
+    showToast("Update already in progress", "info");
+    return;
+  }
+
   const updateBtn = document.getElementById("update-button");
   const btnText = updateBtn.querySelector(".button-text");
   const btnLoading = updateBtn.querySelector(".button-loading");
@@ -372,18 +650,56 @@ async function triggerScraper() {
     const result = await response.json();
 
     if (result.success) {
-      alert(`✓ ${result.message}\n\nThe scraper is now running. Results will be available in about 30 minutes.`);
+      // Start polling for updates
+      startPollingForUpdates();
     } else {
-      alert(`✗ Failed to trigger scraper:\n${result.error}\n\n${result.details || ""}`);
+      showToast(`Failed to trigger scraper: ${result.error}`, "error");
     }
   } catch (error) {
     console.error("Error triggering scraper:", error);
-    alert(`✗ Error triggering scraper:\n${error.message}\n\nPlease try again later.`);
+    showToast(`Error triggering scraper: ${error.message}`, "error");
   } finally {
     // Re-enable button
     updateBtn.disabled = false;
     btnText.style.display = "inline";
     btnLoading.style.display = "none";
+  }
+}
+
+// === Date Formatting ===
+function formatScrapedDate(dateStr) {
+  if (!dateStr) return "";
+
+  try {
+    // Parse date string (format: YYYY-MM-DD)
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const scrapedDate = new Date(year, month - 1, day);
+    const now = new Date();
+
+    // Calculate days difference
+    const diffTime = now - scrapedDate;
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    // Format absolute date
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    const formattedDate = scrapedDate.toLocaleDateString('en-US', options);
+
+    // Add relative time
+    let relativeTime = "";
+    if (diffDays === 0) {
+      relativeTime = " (today)";
+    } else if (diffDays === 1) {
+      relativeTime = " (yesterday)";
+    } else if (diffDays > 1 && diffDays <= 7) {
+      relativeTime = ` (${diffDays} days ago)`;
+    } else if (diffDays > 7) {
+      const weeks = Math.floor(diffDays / 7);
+      relativeTime = ` (${weeks} week${weeks > 1 ? 's' : ''} ago)`;
+    }
+
+    return `Last updated: ${formattedDate}${relativeTime}`;
+  } catch (err) {
+    return `Last updated: ${dateStr}`;
   }
 }
 
@@ -396,7 +712,7 @@ async function init() {
   state.allDeals = deals;
 
   if (deals.length > 0 && deals[0].scraped_date) {
-    els.scrapedDate.textContent = `Last updated: ${deals[0].scraped_date}`;
+    els.scrapedDate.textContent = formatScrapedDate(deals[0].scraped_date);
   }
 
   populateBrands(deals);
@@ -409,6 +725,9 @@ async function init() {
   if (updateBtn) {
     updateBtn.addEventListener("click", triggerScraper);
   }
+
+  // Resume polling if needed
+  resumePollingIfNeeded();
 }
 
 init();
