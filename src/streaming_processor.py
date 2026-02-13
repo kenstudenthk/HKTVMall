@@ -32,6 +32,12 @@ from src.config import (
     REQUEST_DELAY,
 )
 
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+except ImportError:
+    boto3 = None
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -147,6 +153,84 @@ def atomic_write_json(path: Path, data: list[dict]):
         Path(temp_path).unlink(missing_ok=True)
         log.error(f"Failed to write {path}: {e}")
         raise
+
+
+def load_previous_deals() -> dict[str, dict]:
+    """Load existing deals.json and return a lookup dict by product_code."""
+    if not DEALS_PATH.exists():
+        log.info("No previous deals.json found, all items will be marked as new")
+        return {}
+
+    try:
+        with open(DEALS_PATH, "r", encoding="utf-8") as f:
+            previous = json.load(f)
+        lookup = {d["product_code"]: d for d in previous if d.get("product_code")}
+        log.info(f"Loaded {len(lookup)} previous deals for last_updated comparison")
+        return lookup
+    except (json.JSONDecodeError, KeyError) as e:
+        log.warning(f"Failed to load previous deals.json: {e}")
+        return {}
+
+
+def apply_last_updated(
+    deals: list[dict],
+    previous_lookup: dict[str, dict],
+    scraped_date: str,
+) -> list[dict]:
+    """Set last_updated on each deal by comparing with previous data."""
+    for deal in deals:
+        code = deal["product_code"]
+        prev = previous_lookup.get(code)
+
+        if prev is None:
+            # New item
+            deal["last_updated"] = scraped_date
+        elif (
+            deal["original_price"] != prev.get("original_price")
+            or deal["sale_price"] != prev.get("sale_price")
+            or deal["in_stock"] != prev.get("in_stock")
+        ):
+            # Data changed
+            deal["last_updated"] = scraped_date
+        else:
+            # Unchanged — carry over previous last_updated
+            deal["last_updated"] = prev.get("last_updated", prev.get("scraped_date", scraped_date))
+
+    return deals
+
+
+def upload_to_r2(deals: list[dict]):
+    """Upload deals.json to Cloudflare R2 via boto3. Skips silently if not configured."""
+    if boto3 is None:
+        log.debug("boto3 not installed, skipping R2 upload")
+        return
+
+    access_key = os.environ.get("R2_ACCESS_KEY_ID")
+    secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+    endpoint = os.environ.get("R2_ENDPOINT")
+    bucket = os.environ.get("R2_BUCKET")
+
+    if not all([access_key, secret_key, endpoint, bucket]):
+        log.debug("R2 credentials not configured, skipping upload")
+        return
+
+    try:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+        body = json.dumps(deals, ensure_ascii=False, indent=2).encode("utf-8")
+        s3.put_object(
+            Bucket=bucket,
+            Key="deals.json",
+            Body=body,
+            ContentType="application/json",
+        )
+        log.info(f"Uploaded {len(deals)} deals to R2 ({len(body)} bytes)")
+    except Exception as e:
+        log.warning(f"R2 upload failed (non-fatal): {e}")
 
 
 async def fetch_and_process_page(
@@ -295,6 +379,9 @@ async def run_streaming_processor():
     scraped_date = date.today().isoformat()
     log.info(f"Starting streaming processor (scraped_date: {scraped_date})")
 
+    # Load previous deals for last_updated comparison
+    previous_lookup = load_previous_deals()
+
     all_deals = []
     failed_categories = []
 
@@ -319,6 +406,12 @@ async def run_streaming_processor():
                 )
                 all_deals.extend(deals)
                 log.info(f"[{cat_info['label']}] Completed: {len(deals)} deals")
+
+                # Incremental: deduplicate, apply last_updated, write & upload
+                intermediate = deduplicate_and_sort(list(all_deals))
+                apply_last_updated(intermediate, previous_lookup, scraped_date)
+                atomic_write_json(DEALS_PATH, intermediate)
+                upload_to_r2(intermediate)
             except Exception as e:
                 log.error(f"[{cat_info['label']}] Failed: {e}", exc_info=True)
                 failed_categories.append(cat_key)
@@ -329,12 +422,13 @@ async def run_streaming_processor():
         log.error("No deals collected from any category")
         return []
 
-    # Global deduplication and sorting
+    # Final deduplication, last_updated, and write
     final_deals = deduplicate_and_sort(all_deals)
+    apply_last_updated(final_deals, previous_lookup, scraped_date)
     log.info(f"Total unique deals: {len(final_deals)}")
 
-    # Atomic write
     atomic_write_json(DEALS_PATH, final_deals)
+    upload_to_r2(final_deals)
 
     if failed_categories:
         log.warning(f"Partial success. Failed categories: {failed_categories}")

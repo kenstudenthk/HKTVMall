@@ -496,6 +496,13 @@ select {
   color: #c62828;
 }
 
+.card-updated {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  padding: 4px 14px 0;
+  text-align: right;
+}
+
 .card-link {
   display: block;
   text-align: center;

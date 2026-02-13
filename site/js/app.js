@@ -181,9 +181,13 @@ async function pollForNewData() {
 
     if (Array.isArray(data) && data.length > 0 && data[0].scraped_date) {
       const newDate = data[0].scraped_date;
+      const newCount = data.length;
 
-      // Check if data has been updated
-      if (newDate !== state.updateStatus.lastScrapedDate) {
+      // Check if data has been updated (date changed or deal count changed)
+      if (
+        newDate !== state.updateStatus.lastScrapedDate ||
+        newCount !== state.updateStatus.lastDealCount
+      ) {
         onNewDataDetected();
         return;
       }
@@ -216,10 +220,11 @@ function onNewDataDetected() {
 }
 
 function startPollingForUpdates() {
-  // Store current scraped_date as baseline
+  // Store current scraped_date and deal count as baseline
   if (state.allDeals.length > 0 && state.allDeals[0].scraped_date) {
     state.updateStatus.lastScrapedDate = state.allDeals[0].scraped_date;
   }
+  state.updateStatus.lastDealCount = state.allDeals.length;
 
   state.updateStatus.isPolling = true;
   state.updateStatus.triggerTime = Date.now();
@@ -492,6 +497,7 @@ function createCardHTML(deal) {
         <span class="discount-badge">-${discountPct}%</span>
         <span class="stock-badge ${stockClass}">${stockText}</span>
       </div>
+      ${deal.last_updated ? `<div class="card-updated">${escapeHTML(formatLastUpdated(deal.last_updated))}</div>` : ""}
     </div>
     <a class="card-link" href="${productUrl}" target="_blank" rel="noopener">View on HKTVmall &rarr;</a>
   </div>`;
@@ -708,6 +714,27 @@ function formatScrapedDate(dateStr) {
     return `Last updated: ${formattedDate}${relativeTime}`;
   } catch (err) {
     return `Last updated: ${dateStr}`;
+  }
+}
+
+// === Per-item Date Formatting ===
+function formatLastUpdated(dateStr) {
+  if (!dateStr) return "";
+
+  try {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const updated = new Date(year, month - 1, day);
+    const now = new Date();
+    const diffDays = Math.floor((now - updated) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Updated today";
+    if (diffDays === 1) return "Updated yesterday";
+    if (diffDays <= 7) return `Updated ${diffDays} days ago`;
+
+    const options = { month: "short", day: "numeric" };
+    return `Updated ${updated.toLocaleDateString("en-US", options)}`;
+  } catch {
+    return `Updated ${dateStr}`;
   }
 }
 
