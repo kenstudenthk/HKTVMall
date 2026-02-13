@@ -34,13 +34,14 @@ jobs:
       - name: Run processor
         run: python -m src.processor
 
-      - name: Send email digest
-        if: always()
-        env:
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
-        run: python -m src.emailer
+      # Email digest disabled
+      # - name: Send email digest
+      #   if: always()
+      #   env:
+      #     EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+      #     EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      #     EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+      #   run: python -m src.emailer
 
       - name: Commit updated deals data
         run: |
