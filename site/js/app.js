@@ -547,11 +547,12 @@ function bindEvents() {
     applyFiltersAndRender();
   });
 
-  // Brand "All" button — clears brand filter (shows all brands)
+  // Brand "All" button — selects all brands so you can uncheck the few you don't want
   els.brandAllBtn.addEventListener("click", () => {
     state.filters.brands.clear();
     els.brandList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-      cb.checked = false;
+      cb.checked = true;
+      state.filters.brands.add(cb.value);
     });
     applyFiltersAndRender();
   });
