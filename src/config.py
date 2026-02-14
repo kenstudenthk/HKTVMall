@@ -11,7 +11,7 @@ DEALS_PATH = DATA_DIR / "deals.json"
 
 # --- HKTVmall cate-search API ---
 CATE_SEARCH_API_URL = "https://cate-search.hktvmall.com/query/products"
-BASE_URL = "https://www.hktvmall.com"
+BASE_URL = "https://www.hktvmall.com/hktv/zh/"
 
 # Category codes (HKTVmall internal structure)
 CATEGORIES = {

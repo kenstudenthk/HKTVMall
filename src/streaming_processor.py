@@ -106,7 +106,7 @@ def process_product(raw: dict, scraped_date: str) -> dict | None:
     # Build product URL
     product_url = raw.get("url", "")
     if product_url and not product_url.startswith("http"):
-        product_url = BASE_URL + product_url
+        product_url = BASE_URL + product_url.lstrip("/")
 
     # Stock status
     stock_info = raw.get("stock", {})

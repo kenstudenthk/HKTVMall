@@ -38,6 +38,7 @@ const els = {
   catDog: document.getElementById("cat-dog"),
   catCat: document.getElementById("cat-cat"),
   brandSearch: document.getElementById("brand-search"),
+  brandAllBtn: document.getElementById("brand-all-btn"),
   brandList: document.getElementById("brand-list"),
   priceMin: document.getElementById("price-min"),
   priceMax: document.getElementById("price-max"),
@@ -543,6 +544,15 @@ function bindEvents() {
   els.catCat.addEventListener("change", () => {
     if (els.catCat.checked) state.filters.categories.add("cat_food");
     else state.filters.categories.delete("cat_food");
+    applyFiltersAndRender();
+  });
+
+  // Brand "All" button — clears brand filter (shows all brands)
+  els.brandAllBtn.addEventListener("click", () => {
+    state.filters.brands.clear();
+    els.brandList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.checked = false;
+    });
     applyFiltersAndRender();
   });
 

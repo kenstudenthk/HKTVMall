@@ -232,6 +232,25 @@ select {
   border-color: var(--color-accent);
 }
 
+.brand-all-btn {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-family: var(--font-stack);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: background 0.15s;
+}
+
+.brand-all-btn:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
 .brand-list {
   max-height: 200px;
   overflow-y: auto;
