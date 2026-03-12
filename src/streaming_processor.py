@@ -168,7 +168,7 @@ def load_previous_deals() -> dict[str, dict]:
         lookup = {d["product_code"]: d for d in previous if d.get("product_code")}
         log.info(f"Loaded {len(lookup)} previous deals for last_updated comparison")
         return lookup
-    except (json.JSONDecodeError, KeyError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
         log.warning(f"Failed to load previous deals.json: {e}")
         return {}
 
@@ -383,10 +383,12 @@ def deduplicate_and_sort(deals: list[dict]) -> list[dict]:
 
     for deal in deals:
         code = deal["product_code"]
-        if code and code in seen_codes:
+        if not code:
+            log.warning("Skipping deal with empty product_code: %s", deal.get("product_name", ""))
             continue
-        if code:
-            seen_codes.add(code)
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
         deduplicated.append(deal)
 
     deduplicated.sort(key=lambda d: d["discount_pct"], reverse=True)

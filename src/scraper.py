@@ -24,30 +24,13 @@ from src.config import (
     RAW_PRODUCTS_PATH,
     REQUEST_DELAY,
 )
+from src.streaming_processor import _normalize_product
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 log = logging.getLogger(__name__)
-
-
-def _normalize_product(product: dict) -> dict:
-    """Add promotionPrice from priceList for processor compatibility.
-
-    The cate-search API returns prices in priceList (BUY + DISCOUNT entries)
-    rather than separate price/promotionPrice fields.
-    """
-    price_list = product.get("priceList", [])
-    for entry in price_list:
-        if entry.get("priceType") == "DISCOUNT":
-            product["promotionPrice"] = {
-                "currencyIso": entry.get("currencyIso", "HKD"),
-                "value": entry.get("value"),
-                "formattedValue": entry.get("formattedValue", ""),
-            }
-            break
-    return product
 
 
 async def scrape_category(api_context, category_key: str, category_info: dict) -> list[dict]:
