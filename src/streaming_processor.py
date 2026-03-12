@@ -241,10 +241,12 @@ async def fetch_and_process_page(
     page_num: int,
     scraped_date: str,
     label: str
-) -> list[dict]:
+) -> list[dict] | None:
     """Fetch one page and process products immediately.
 
-    Returns list of deals (filtered products with discounts).
+    Returns:
+        list of deals (may be empty if no products had discounts),
+        or None if the page had no products (signals end of data).
     """
     try:
         resp = await api_context.post(
@@ -268,7 +270,8 @@ async def fetch_and_process_page(
     products = data.get("products", [])
 
     if not products:
-        return []
+        # Truly empty page — signals end of data
+        return None
 
     # Process each product immediately
     deals = []
@@ -352,8 +355,8 @@ async def scrape_and_process_category(
             api_context, category_key, query, page_num, scraped_date, label
         )
 
-        if not page_deals and not products:
-            # No deals and no products means truly empty page
+        if page_deals is None:
+            # API returned no products — end of data
             log.info("[%s] No more products at page %d, stopping", label, page_num)
             break
 
