@@ -1,9 +1,19 @@
-name: Weekly Pet Food Deal Scrape
+name: Pet Food Deal Scrape
 
 on:
   schedule:
-    - cron: '0 2 * * 0'  # Sunday 2AM UTC (10AM HKT)
+    - cron: '0 2 * * *'  # Daily 2AM UTC (10AM HKT)
   workflow_dispatch:       # Manual trigger
+    inputs:
+      category:
+        description: 'Category to scrape'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - dog
+          - cat
 
 permissions:
   contents: write
@@ -25,6 +35,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
       - name: Install Playwright Chromium
         run: python -m playwright install chromium --with-deps
 
@@ -34,6 +52,7 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          SCRAPE_CATEGORY: ${{ github.event.inputs.category || 'both' }}
         run: python -m src.scraper
 
       - name: Build static site data

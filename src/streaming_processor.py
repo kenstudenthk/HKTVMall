@@ -30,6 +30,7 @@ from src.config import (
     MAX_PAGES,
     PAGE_SIZE,
     REQUEST_DELAY,
+    SCRAPE_CATEGORY,
     UPLOAD_BATCH_SIZE,
 )
 
@@ -404,6 +405,15 @@ async def run_streaming_processor():
     # Load previous deals for last_updated comparison
     previous_lookup = load_previous_deals()
 
+    # Filter categories based on SCRAPE_CATEGORY env var
+    if SCRAPE_CATEGORY == "dog":
+        active_categories = {k: v for k, v in CATEGORIES.items() if k == "dog_food"}
+    elif SCRAPE_CATEGORY == "cat":
+        active_categories = {k: v for k, v in CATEGORIES.items() if k == "cat_food"}
+    else:
+        active_categories = CATEGORIES
+    log.info(f"Scraping categories: {list(active_categories.keys())} (SCRAPE_CATEGORY={SCRAPE_CATEGORY!r})")
+
     all_deals = []
     failed_categories = []
 
@@ -428,7 +438,7 @@ async def run_streaming_processor():
             atomic_write_json(DEALS_PATH, intermediate)
             upload_to_r2(intermediate)
 
-        for cat_key, cat_info in CATEGORIES.items():
+        for cat_key, cat_info in active_categories.items():
             try:
                 deals = await scrape_and_process_category(
                     api_context, cat_key, cat_info, scraped_date,
