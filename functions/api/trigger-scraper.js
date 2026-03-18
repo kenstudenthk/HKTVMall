@@ -24,51 +24,63 @@ export async function onRequestPost(context) {
     return new Response(
       JSON.stringify({
         success: false,
-        error: "GitHub token not configured. Please set GITHUB_TOKEN in Cloudflare Pages environment variables."
+        error:
+          "GitHub token not configured. Please set GITHUB_TOKEN in Cloudflare Pages environment variables.",
       }),
       {
         status: 500,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
     );
   }
+
+  // Parse request body to extract optional category
+  let body = {};
+  try {
+    body = await context.request.json();
+  } catch (_) {}
+  const category = body?.category || "both";
 
   try {
     // Trigger GitHub Actions workflow via workflow_dispatch
     const githubApiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`;
 
-    console.log(`Triggering workflow: ${GITHUB_OWNER}/${GITHUB_REPO} - ${WORKFLOW_FILE}`);
+    console.log(
+      `Triggering workflow: ${GITHUB_OWNER}/${GITHUB_REPO} - ${WORKFLOW_FILE} (category: ${category})`,
+    );
 
     const response = await fetch(githubApiUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${GITHUB_TOKEN}`,
-        "Accept": "application/vnd.github+json",
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "HKTVMall-Scraper-Trigger"
+        "User-Agent": "HKTVMall-Scraper-Trigger",
       },
       body: JSON.stringify({
-        ref: "main" // Branch to run the workflow on
-      })
+        ref: "main",
+        inputs: { category },
+      }),
     });
 
     if (response.ok) {
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Scraper workflow triggered successfully! Check the Actions tab on GitHub for progress.",
-          workflow_url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}`
+          message:
+            "Scraper workflow triggered successfully! Check the Actions tab on GitHub for progress.",
+          workflow_url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}`,
         }),
         {
           status: 200,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
-        }
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
       );
     } else {
       const errorData = await response.text();
@@ -84,16 +96,16 @@ export async function onRequestPost(context) {
           config: {
             owner: GITHUB_OWNER,
             repo: GITHUB_REPO,
-            workflow: WORKFLOW_FILE
-          }
+            workflow: WORKFLOW_FILE,
+          },
         }),
         {
           status: response.status,
           headers: {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
-        }
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
       );
     }
   } catch (error) {
@@ -103,15 +115,15 @@ export async function onRequestPost(context) {
       JSON.stringify({
         success: false,
         error: "Failed to trigger workflow",
-        details: error.message
+        details: error.message,
       }),
       {
         status: 500,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
     );
   }
 }
@@ -123,7 +135,7 @@ export async function onRequestOptions() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
-    }
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
   });
 }

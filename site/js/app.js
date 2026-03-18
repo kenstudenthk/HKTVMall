@@ -4,6 +4,7 @@ const state = {
   allDeals: [],
   filteredDeals: [],
   currentPage: 1,
+  selectedCategory: "both",
   filters: {
     minDiscount: 0,
     categories: new Set(["dog_food", "cat_food"]),
@@ -55,6 +56,7 @@ const els = {
   filterToggleBtn: document.getElementById("filter-toggle-btn"),
   filterCloseBtn: document.getElementById("filter-close-btn"),
   filterOverlay: document.getElementById("filter-overlay"),
+  scrapeCategorySelector: document.getElementById("scrape-category-selector"),
 };
 
 // === Utility ===
@@ -96,24 +98,36 @@ function showToast(message, type = "info") {
 }
 
 // === Status Banner ===
+function getEstimatedDuration() {
+  return state.selectedCategory === "both" ? 180 : 90; // seconds
+}
+
 function renderStatusBanner() {
-  const { triggerTime, pollCount } = state.updateStatus;
+  const { triggerTime } = state.updateStatus;
 
   if (!triggerTime) {
     hideStatusBanner();
     return;
   }
 
-  const elapsed = Date.now() - triggerTime;
-  const elapsedMinutes = Math.floor(elapsed / 60000);
-  const estimatedTotal = 30; // minutes
-  const remaining = Math.max(0, estimatedTotal - elapsedMinutes);
+  const elapsedMs = Date.now() - triggerTime;
+  const totalSecs = getEstimatedDuration();
+  const pct = Math.min((elapsedMs / (totalSecs * 1000)) * 100, 90);
+  const remainingSecs = Math.max(0, totalSecs - Math.floor(elapsedMs / 1000));
+  const remM = Math.floor(remainingSecs / 60);
+  const remS = remainingSecs % 60;
+  const remainingText = remM > 0 ? `~${remM}m ${remS}s left` : `~${remS}s left`;
 
   els.statusBanner.innerHTML = `
     <div class="status-banner-content">
-      <span class="status-banner-icon">🔄</span>
-      <span>Data is being updated...</span>
-      <span class="countdown-timer">Estimated completion in ~${remaining} minutes</span>
+      <div class="status-text-group">
+        <span class="status-banner-icon">🔄</span>
+        <span>Data is being updated...</span>
+        <span class="countdown-timer">${remainingText}</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" style="width: ${pct}%"></div>
+      </div>
     </div>
     <button class="status-banner-cancel" id="cancel-polling">Cancel</button>
   `;
@@ -135,15 +149,19 @@ function hideStatusBanner() {
 function updateCountdown() {
   if (!state.updateStatus.isPolling || !state.updateStatus.triggerTime) return;
 
-  const elapsed = Date.now() - state.updateStatus.triggerTime;
-  const elapsedMinutes = Math.floor(elapsed / 60000);
-  const estimatedTotal = 30;
-  const remaining = Math.max(0, estimatedTotal - elapsedMinutes);
+  const elapsedMs = Date.now() - state.updateStatus.triggerTime;
+  const totalSecs = getEstimatedDuration();
+  const pct = Math.min((elapsedMs / (totalSecs * 1000)) * 100, 90);
+  const remainingSecs = Math.max(0, totalSecs - Math.floor(elapsedMs / 1000));
+  const remM = Math.floor(remainingSecs / 60);
+  const remS = remainingSecs % 60;
+  const remainingText = remM > 0 ? `~${remM}m ${remS}s left` : `~${remS}s left`;
 
   const timerEl = document.querySelector(".countdown-timer");
-  if (timerEl) {
-    timerEl.textContent = `Estimated completion in ~${remaining} minutes`;
-  }
+  if (timerEl) timerEl.textContent = remainingText;
+
+  const fillEl = document.querySelector(".progress-bar-fill");
+  if (fillEl) fillEl.style.width = `${pct}%`;
 }
 
 // === Polling Infrastructure ===
@@ -168,7 +186,10 @@ async function pollForNewData() {
 
   // Timeout check
   if (elapsed > maxDuration || state.updateStatus.pollCount >= maxPolls) {
-    showToast("Update is taking longer than expected. Check GitHub Actions or try again.", "error");
+    showToast(
+      "Update is taking longer than expected. Check GitHub Actions or try again.",
+      "error",
+    );
     stopPolling();
     return;
   }
@@ -200,7 +221,6 @@ async function pollForNewData() {
 
     const delay = getNextPollDelay(state.updateStatus.pollCount);
     state.updateStatus.pollInterval = setTimeout(pollForNewData, delay);
-
   } catch (err) {
     console.error("Polling error:", err);
 
@@ -237,11 +257,14 @@ function startPollingForUpdates() {
   // Start countdown timer (update every second)
   state.updateStatus.countdownInterval = setInterval(updateCountdown, 1000);
 
-  // Start first poll after 2 minutes
-  const initialDelay = 2 * 60 * 1000;
+  // Start first poll after 1 minute
+  const initialDelay = 1 * 60 * 1000;
   state.updateStatus.pollInterval = setTimeout(pollForNewData, initialDelay);
 
-  showToast("Scraper started successfully! Checking for updates automatically...", "info");
+  showToast(
+    "Scraper started successfully! Checking for updates automatically...",
+    "info",
+  );
 }
 
 function stopPolling() {
@@ -269,6 +292,7 @@ function saveUpdateStatusToLocalStorage() {
     lastScrapedDate: state.updateStatus.lastScrapedDate,
     pollCount: state.updateStatus.pollCount,
     lastPollTime: Date.now(),
+    category: state.selectedCategory,
   };
 
   try {
@@ -313,6 +337,7 @@ function resumePollingIfNeeded() {
     state.updateStatus.triggerTime = statusData.triggerTime;
     state.updateStatus.lastScrapedDate = statusData.lastScrapedDate;
     state.updateStatus.pollCount = statusData.pollCount;
+    state.selectedCategory = statusData.category || "both";
 
     renderStatusBanner();
 
@@ -322,12 +347,14 @@ function resumePollingIfNeeded() {
     // Calculate next poll time based on when the last poll actually happened
     const lastPollTime = statusData.lastPollTime || statusData.triggerTime;
     const timeSinceLastPoll = Date.now() - lastPollTime;
-    const nextDelay = Math.max(0, getNextPollDelay(state.updateStatus.pollCount) - timeSinceLastPoll);
+    const nextDelay = Math.max(
+      0,
+      getNextPollDelay(state.updateStatus.pollCount) - timeSinceLastPoll,
+    );
 
     state.updateStatus.pollInterval = setTimeout(pollForNewData, nextDelay);
 
     showToast("Update in progress (resumed)", "info");
-
   } catch (err) {
     console.error("Failed to resume polling:", err);
     clearUpdateStatusFromLocalStorage();
@@ -357,7 +384,7 @@ async function fetchDeals() {
 // === Brand population ===
 function populateBrands(deals) {
   const brands = [...new Set(deals.map((d) => d.brand).filter(Boolean))].sort(
-    (a, b) => a.localeCompare(b)
+    (a, b) => a.localeCompare(b),
   );
 
   els.brandList.innerHTML = brands
@@ -365,7 +392,7 @@ function populateBrands(deals) {
       (b) =>
         `<label class="checkbox-label" data-brand="${escapeHTML(b)}">
           <input type="checkbox" value="${escapeHTML(b)}"> ${escapeHTML(b)}
-        </label>`
+        </label>`,
     )
     .join("");
 }
@@ -418,7 +445,7 @@ function applyFiltersAndRender() {
       break;
     case "name-asc":
       state.filteredDeals.sort((a, b) =>
-        a.product_name.localeCompare(b.product_name)
+        a.product_name.localeCompare(b.product_name),
       );
       break;
   }
@@ -445,8 +472,7 @@ function renderMetrics() {
     return;
   }
 
-  const avg =
-    deals.reduce((sum, d) => sum + d.discount_pct, 0) / deals.length;
+  const avg = deals.reduce((sum, d) => sum + d.discount_pct, 0) / deals.length;
   const best = Math.max(...deals.map((d) => d.discount_pct));
 
   els.metricAvg.textContent = `${avg.toFixed(1)}%`;
@@ -623,7 +649,7 @@ function bindEvents() {
 
   els.nextBtn.addEventListener("click", () => {
     const totalPages = Math.ceil(
-      state.filteredDeals.length / PRODUCTS_PER_PAGE
+      state.filteredDeals.length / PRODUCTS_PER_PAGE,
     );
     if (state.currentPage < totalPages) {
       state.currentPage++;
@@ -647,6 +673,19 @@ function closeFilterPanel() {
   els.filterOverlay.classList.remove("active");
 }
 
+// === Scrape Category Selector ===
+function bindScrapeCategorySelector() {
+  if (!els.scrapeCategorySelector) return;
+  els.scrapeCategorySelector.addEventListener("click", (e) => {
+    const btn = e.target.closest(".scrape-cat-btn");
+    if (!btn) return;
+    state.selectedCategory = btn.dataset.category;
+    els.scrapeCategorySelector
+      .querySelectorAll(".scrape-cat-btn")
+      .forEach((b) => b.classList.toggle("active", b === btn));
+  });
+}
+
 // === Manual Update Button ===
 async function triggerScraper() {
   // Prevent triggering while already polling
@@ -668,8 +707,9 @@ async function triggerScraper() {
     const response = await fetch("/api/trigger-scraper", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
-      }
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ category: state.selectedCategory }),
     });
 
     const result = await response.json();
@@ -706,8 +746,8 @@ function formatScrapedDate(dateStr) {
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
     // Format absolute date
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    const formattedDate = scrapedDate.toLocaleDateString('en-US', options);
+    const options = { year: "numeric", month: "short", day: "numeric" };
+    const formattedDate = scrapedDate.toLocaleDateString("en-US", options);
 
     // Add relative time
     let relativeTime = "";
@@ -719,7 +759,7 @@ function formatScrapedDate(dateStr) {
       relativeTime = ` (${diffDays} days ago)`;
     } else if (diffDays > 7) {
       const weeks = Math.floor(diffDays / 7);
-      relativeTime = ` (${weeks} week${weeks > 1 ? 's' : ''} ago)`;
+      relativeTime = ` (${weeks} week${weeks > 1 ? "s" : ""} ago)`;
     }
 
     return `Last updated: ${formattedDate}${relativeTime}`;
@@ -764,6 +804,7 @@ async function init() {
   populateBrands(deals);
   setupPriceRange(deals);
   bindEvents();
+  bindScrapeCategorySelector();
   applyFiltersAndRender();
 
   // Attach update button listener

@@ -10,10 +10,17 @@
   <header class="site-header">
     <h1>HKTVmall Pet Food Deals</h1>
     <p id="scraped-date" class="scraped-date"></p>
-    <button id="update-button" class="update-button" title="Trigger scraper to update deals">
-      <span class="button-text">Manual Update</span>
-      <span class="button-loading" style="display: none;">Triggering...</span>
-    </button>
+    <div class="update-controls">
+      <div class="scrape-category-selector" id="scrape-category-selector">
+        <button class="scrape-cat-btn active" data-category="both">Both</button>
+        <button class="scrape-cat-btn" data-category="dog">Dog</button>
+        <button class="scrape-cat-btn" data-category="cat">Cat</button>
+      </div>
+      <button id="update-button" class="update-button" title="Trigger scraper to update deals">
+        <span class="button-text">Manual Update</span>
+        <span class="button-loading" style="display: none;">Triggering...</span>
+      </button>
+    </div>
   </header>
 
   <!-- Status Banner -->

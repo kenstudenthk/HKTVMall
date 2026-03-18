@@ -30,9 +30,11 @@ CATEGORIES = {
 # --- Scraper settings ---
 PAGE_SIZE = 60  # max allowed by cate-search API
 MAX_PAGES = 250
-REQUEST_DELAY = 1.0  # seconds between API requests
+REQUEST_DELAY = 0.5  # seconds between API requests
 API_TIMEOUT = 30_000  # ms
 UPLOAD_BATCH_SIZE = 50  # pages between intermediate R2 uploads
+
+SCRAPE_CATEGORY = os.getenv("SCRAPE_CATEGORY", "both")  # 'dog', 'cat', or 'both'
 
 # --- Email settings (from environment variables) ---
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER", "")
