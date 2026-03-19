@@ -701,6 +701,12 @@ function bindEvents() {
       stockEl.textContent = data.in_stock ? "In Stock" : "Out of Stock";
       stockEl.className = `stock-badge js-stock-badge ${data.in_stock ? "in-stock" : "out-of-stock"}`;
 
+      // Update "last updated" timestamp to reflect this live check
+      const updatedEl = card.querySelector(".card-updated");
+      if (updatedEl) {
+        updatedEl.textContent = "Price checked just now";
+      }
+
       btn.classList.remove("refreshing");
       btn.classList.add("success");
       setTimeout(() => btn.classList.remove("success"), 2000);

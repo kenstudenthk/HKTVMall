@@ -1,30 +1,39 @@
 /**
  * Cloudflare Pages Function to fetch real-time price/stock for a single product.
  *
+ * Uses the same cate-search API the scraper uses, searching by product code.
+ *
  * Query params:
  * - code: product_code (e.g. "KPM0053-03-00P")
- * - url: (optional) product_url as fallback context
  *
  * Response: { original_price, sale_price, discount_pct, in_stock }
  * On error: { error: "..." }
  */
 
+const CATE_SEARCH_API = "https://cate-search.hktvmall.com/query/products";
+
 export async function onRequestGet(context) {
   const reqUrl = new URL(context.request.url);
-  const code = reqUrl.searchParams.get("code");
+  const code = (reqUrl.searchParams.get("code") || "").trim();
 
-  if (!code || code.trim() === "") {
+  if (!code) {
     return jsonResponse({ error: "Missing product code" }, 400);
   }
 
   try {
-    const apiUrl = `https://www.hktvmall.com/hktvweb/product/productDetail?productCode=${encodeURIComponent(code.trim())}`;
+    // Use the same API as the scraper: POST with URL params, search by code as query
+    const params = new URLSearchParams({
+      query: code,
+      currentPage: "0",
+      pageSize: "10",
+    });
 
-    const response = await fetch(apiUrl, {
+    const response = await fetch(`${CATE_SEARCH_API}?${params}`, {
+      method: "POST",
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "application/json, text/javascript, */*; q=0.01",
+        Accept: "application/json",
         Referer: "https://www.hktvmall.com/",
       },
     });
@@ -37,40 +46,58 @@ export async function onRequestGet(context) {
     }
 
     const data = await response.json();
+    const products = data.products || [];
 
-    // productDetail may wrap the product under different keys
-    const product = data.product || data.productData || data;
+    // Find exact match by product code
+    let product = products.find((p) => p.code === code);
 
-    // Extract original price (same field as scraper: product.price.value)
-    const original_price = safeFloat(product.price);
+    // Fallback: partial match if exact not found (code may be a SKU prefix)
+    if (!product) {
+      product = products.find((p) => p.code && p.code.startsWith(code));
+    }
 
-    // Extract sale price — try promotionPrice first, then priceList[DISCOUNT]
-    // (mirrors _normalize_product in streaming_processor.py)
-    let sale_price = safeFloat(product.promotionPrice);
-    if (sale_price === null && Array.isArray(product.priceList)) {
-      for (const entry of product.priceList) {
+    if (!product) {
+      return jsonResponse(
+        { error: `Product ${code} not found in search results` },
+        404,
+      );
+    }
+
+    // Normalize priceList → promotionPrice (mirrors _normalize_product in streaming_processor.py)
+    if (!product.promotionPrice) {
+      const priceList = product.priceList || [];
+      for (const entry of priceList) {
         if (entry.priceType === "DISCOUNT") {
-          sale_price = parseFloat(entry.value) || null;
+          product.promotionPrice = { value: entry.value };
           break;
         }
       }
     }
 
-    if (original_price === null || sale_price === null) {
-      return jsonResponse({ error: "Price data unavailable for this product" }, 404);
+    const original_price = safeFloat(product.price);
+    const sale_price = safeFloat(product.promotionPrice);
+
+    if (original_price === null) {
+      return jsonResponse({ error: "Price data unavailable" }, 404);
     }
 
+    // If no sale price, item is not discounted — return full price as both
+    const effective_sale = sale_price ?? original_price;
     const discount_pct =
       original_price > 0
-        ? Math.round(((original_price - sale_price) / original_price) * 100)
+        ? Math.round(((original_price - effective_sale) / original_price) * 100)
         : 0;
 
     // Stock status (same logic as scraper)
-    const stockInfo = product.stock || {};
-    const stockStatus = stockInfo.stockLevelStatus || {};
+    const stockStatus = (product.stock || {}).stockLevelStatus || {};
     const in_stock = stockStatus.code === "inStock";
 
-    return jsonResponse({ original_price, sale_price, discount_pct, in_stock });
+    return jsonResponse({
+      original_price,
+      sale_price: effective_sale,
+      discount_pct,
+      in_stock,
+    });
   } catch (err) {
     console.error("refresh-product error:", err);
     return jsonResponse({ error: err.message || "Internal error" }, 500);
