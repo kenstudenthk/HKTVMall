@@ -500,6 +500,7 @@ function createCardHTML(deal) {
   const brand = escapeHTML(deal.brand);
   const imgUrl = escapeHTML(deal.image_url);
   const productUrl = escapeHTML(deal.product_url);
+  const productCode = escapeHTML(deal.product_code);
   const originalPrice = Number(deal.original_price).toFixed(2);
   const salePrice = Number(deal.sale_price).toFixed(2);
   const discountPct = Math.round(deal.discount_pct);
@@ -508,21 +509,22 @@ function createCardHTML(deal) {
 
   const placeholderSVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' fill='%23ccc'%3E%3Crect width='120' height='120' fill='%23f5f5f5'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23aaa'%3ENo Image%3C/text%3E%3C/svg%3E`;
 
-  return `<div class="product-card">
+  return `<div class="product-card" data-product-code="${productCode}" data-product-url="${productUrl}">
     <div class="card-image">
       <img src="${imgUrl}" alt="${name}" loading="lazy"
            onerror="this.onerror=null;this.src='${placeholderSVG}'">
+      <button class="refresh-btn" title="Refresh price" aria-label="Refresh price">&#x21BB;</button>
     </div>
     <div class="card-body">
       <div class="card-name" title="${name}">${name}</div>
       <div class="card-brand">${brand}</div>
       <div class="card-pricing">
-        <span class="card-original-price">$${originalPrice}</span>
-        <span class="card-sale-price">$${salePrice}</span>
+        <span class="card-original-price js-original-price">$${originalPrice}</span>
+        <span class="card-sale-price js-sale-price">$${salePrice}</span>
       </div>
       <div class="card-footer">
-        <span class="discount-badge">-${discountPct}%</span>
-        <span class="stock-badge ${stockClass}">${stockText}</span>
+        <span class="discount-badge js-discount-badge">-${discountPct}%</span>
+        <span class="stock-badge ${stockClass} js-stock-badge">${stockText}</span>
       </div>
       ${deal.last_updated ? `<div class="card-updated">${escapeHTML(formatLastUpdated(deal.last_updated))}</div>` : ""}
     </div>
@@ -666,6 +668,49 @@ function bindEvents() {
 
   els.filterCloseBtn.addEventListener("click", closeFilterPanel);
   els.filterOverlay.addEventListener("click", closeFilterPanel);
+
+  // Per-card price refresh (delegated)
+  els.productGrid.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".refresh-btn");
+    if (!btn) return;
+
+    const card = btn.closest(".product-card");
+    const code = card.dataset.productCode;
+    const url = card.dataset.productUrl;
+
+    if (btn.classList.contains("refreshing")) return; // debounce
+
+    btn.classList.add("refreshing");
+    btn.classList.remove("success", "error");
+
+    try {
+      const res = await fetch(
+        `/api/refresh-product?code=${encodeURIComponent(code)}&url=${encodeURIComponent(url)}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      card.querySelector(".js-original-price").textContent =
+        `$${Number(data.original_price).toFixed(2)}`;
+      card.querySelector(".js-sale-price").textContent =
+        `$${Number(data.sale_price).toFixed(2)}`;
+      card.querySelector(".js-discount-badge").textContent =
+        `-${Math.round(data.discount_pct)}%`;
+      const stockEl = card.querySelector(".js-stock-badge");
+      stockEl.textContent = data.in_stock ? "In Stock" : "Out of Stock";
+      stockEl.className = `stock-badge js-stock-badge ${data.in_stock ? "in-stock" : "out-of-stock"}`;
+
+      btn.classList.remove("refreshing");
+      btn.classList.add("success");
+      setTimeout(() => btn.classList.remove("success"), 2000);
+    } catch (err) {
+      btn.classList.remove("refreshing");
+      btn.classList.add("error");
+      setTimeout(() => btn.classList.remove("error"), 2000);
+      console.error("Refresh failed:", err);
+    }
+  });
 }
 
 function closeFilterPanel() {
