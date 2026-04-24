@@ -13,6 +13,7 @@ const state = {
     priceMax: Infinity,
     inStockOnly: false,
     sort: "discount-desc",
+    weightRange: "any",  // "any" | "under-1kg" | "1kg-3kg" | "3kg-5kg" | "over-5kg"
   },
   updateStatus: {
     isPolling: false,
@@ -38,6 +39,9 @@ const els = {
   discountValue: document.getElementById("discount-value"),
   catDog: document.getElementById("cat-dog"),
   catCat: document.getElementById("cat-cat"),
+  catDogCount: document.getElementById("cat-dog-count"),
+  catCatCount: document.getElementById("cat-cat-count"),
+  weightRadios: document.getElementsByName("weight"),
   brandSearch: document.getElementById("brand-search"),
   brandAllBtn: document.getElementById("brand-all-btn"),
   brandList: document.getElementById("brand-list"),
@@ -67,6 +71,20 @@ function escapeHTML(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// === Weight filter helper ===
+function _weightMatches(weightGrams, range) {
+  if (weightGrams == null) return range === "any"; // no weight data → show only if "any"
+
+  const g = weightGrams;
+  switch (range) {
+    case "under-1kg": return g < 1000;
+    case "1kg-3kg":    return g >= 1000 && g <= 3000;
+    case "3kg-5kg":    return g > 3000 && g <= 5000;
+    case "over-5kg":   return g > 5000;
+    default:           return true;
+  }
 }
 
 // === Toast Notifications ===
@@ -429,6 +447,7 @@ function applyFiltersAndRender() {
     if (f.brands.size > 0 && !f.brands.has(d.brand)) return false;
     if (d.sale_price < f.priceMin || d.sale_price > f.priceMax) return false;
     if (f.inStockOnly && !d.in_stock) return false;
+    if (f.weightRange !== "any" && !_weightMatches(d.weight_grams, f.weightRange)) return false;
     return true;
   });
 
@@ -477,6 +496,13 @@ function renderMetrics() {
 
   els.metricAvg.textContent = `${avg.toFixed(1)}%`;
   els.metricBest.textContent = `${best.toFixed(1)}%`;
+}
+
+function renderCategoryCounts() {
+  const dogCount = state.allDeals.filter((d) => d.category === "dog_food").length;
+  const catCount = state.allDeals.filter((d) => d.category === "cat_food").length;
+  els.catDogCount.textContent = `(${dogCount})`;
+  els.catCatCount.textContent = `(${catCount})`;
 }
 
 function renderGrid() {
@@ -638,6 +664,14 @@ function bindEvents() {
   els.inStockOnly.addEventListener("change", () => {
     state.filters.inStockOnly = els.inStockOnly.checked;
     applyFiltersAndRender();
+  });
+
+  // Weight filter
+  els.weightRadios.forEach((radio) => {
+    radio.addEventListener("change", () => {
+      state.filters.weightRange = radio.value;
+      applyFiltersAndRender();
+    });
   });
 
   // Pagination
@@ -854,6 +888,7 @@ async function init() {
 
   populateBrands(deals);
   setupPriceRange(deals);
+  renderCategoryCounts();
   bindEvents();
   bindScrapeCategorySelector();
   applyFiltersAndRender();
