@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alert Preferences — HKTVmall Pet Food Deals</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { background: var(--color-bg); }
+    .pref-container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: var(--color-surface);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+    }
+    .pref-header { text-align: center; margin-bottom: 28px; }
+    .pref-header h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    .pref-header p { color: var(--color-text-secondary); font-size: 0.9rem; }
+    .pref-user-badge {
+      display: inline-block;
+      background: var(--color-accent);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .pref-section {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .pref-section h3 { font-size: 0.95rem; margin-bottom: 12px; color: var(--color-text); }
+    .pref-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .pref-row:last-child { border-bottom: none; }
+    .pref-row label { font-size: 0.9rem; }
+    .pref-row select, .pref-row input[type="number"], .pref-row input[type="text"] {
+      padding: 6px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      min-width: 140px;
+    }
+    .pref-toggle {
+      position: relative;
+      width: 48px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+    .pref-toggle input { opacity: 0; width: 0; height: 0; }
+    .pref-toggle .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #ccc;
+      border-radius: 26px;
+      transition: 0.3s;
+    }
+    .pref-toggle .slider::before {
+      content: "";
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      left: 3px;
+      bottom: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: 0.3s;
+    }
+    .pref-toggle input:checked + .slider { background: var(--color-accent); }
+    .pref-toggle input:checked + .slider::before { transform: translateX(22px); }
+
+    .alert-preview {
+      background: #f8f8f8;
+      border-radius: var(--radius-md);
+      padding: 16px;
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .alert-preview strong { color: var(--color-text); }
+
+    .save-btn {
+      width: 100%;
+      padding: 14px;
+      background: var(--color-accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+    .save-btn:hover { background: var(--color-accent-light); }
+    .save-btn:disabled { background: #ccc; cursor: not-allowed; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      background: #333;
+      color: white;
+      border-radius: var(--radius-md);
+      font-size: 0.9rem;
+      z-index: 9999;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #2e7d32; }
+    .toast.error { background: #c62828; }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      color: var(--color-link);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="pref-container">
+    <div class="pref-header">
+      <div class="pref-user-badge" id="user-badge">User</div>
+      <h1>🔔 Alert Preferences</h1>
+      <p>Set your filters. Every Friday 1PM HKT you'll get a deal summary.</p>
+    </div>
+
+    <!-- Alert toggle -->
+    <div class="pref-section">
+      <h3>📳 Weekly Alert</h3>
+      <div class="pref-row">
+        <label>Enable Friday alert</label>
+        <label class="pref-toggle">
+          <input type="checkbox" id="alert-enabled" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="pref-row">
+        <label>Max deals to send</label>
+        <input type="number" id="max-deals" value="10" min="3" max="50" step="1">
+      </div>
+    </div>
+
+    <!-- Category -->
+    <div class="pref-section">
+      <h3>🐕🐈 Category</h3>
+      <div class="pref-row">
+        <label>Dog Food</label>
+        <label class="pref-toggle">
+          <input type="checkbox" id="cat-dog" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="pref-row">
+        <label>Cat Food</label>
+        <label class="pref-toggle">
+          <input type="checkbox" id="cat-cat" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Discount -->
+    <div class="pref-section">
+      <h3>💰 Discount</h3>
+      <div class="pref-row">
+        <label>Minimum discount %</label>
+        <input type="number" id="min-discount" value="30" min="0" max="99" step="5">
+      </div>
+    </div>
+
+    <!-- Brand filter -->
+    <div class="pref-section">
+      <h3>🏷️ Brand (leave empty = all)</h3>
+      <div class="pref-row">
+        <label>Include brands (comma-separated)</label>
+        <input type="text" id="brands" placeholder="e.g. Royal Canin, Hills">
+      </div>
+    </div>
+
+    <!-- Price range -->
+    <div class="pref-section">
+      <h3>💵 Price Range (HK$)</h3>
+      <div class="pref-row">
+        <label>Min price</label>
+        <input type="number" id="price-min" value="0" min="0" step="1">
+      </div>
+      <div class="pref-row">
+        <label>Max price</label>
+        <input type="number" id="price-max" value="1000" min="0" step="1">
+      </div>
+    </div>
+
+    <!-- Weight -->
+    <div class="pref-section">
+      <h3>⚖️ Weight</h3>
+      <div class="pref-row">
+        <label>Weight range</label>
+        <select id="weight-range">
+          <option value="any">Any</option>
+          <option value="under-1kg">Under 1kg</option>
+          <option value="1kg-3kg">1kg – 3kg</option>
+          <option value="3kg-5kg">3kg – 5kg</option>
+          <option value="over-5kg">Over 5kg</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- In stock only -->
+    <div class="pref-section">
+      <h3>📦 Stock</h3>
+      <div class="pref-row">
+        <label>In stock only</label>
+        <label class="pref-toggle">
+          <input type="checkbox" id="in-stock-only">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div class="alert-preview" id="alert-preview">
+      Loading preview...
+    </div>
+
+    <button class="save-btn" id="save-btn">💾 Save Preferences</button>
+    <a href="index.html" class="back-link">← Back to Deals</a>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="js/preferences.js" type="module"></script>
+</body>
+</html>
