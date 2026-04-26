@@ -28,6 +28,7 @@ from src.config import (
     CATEGORIES,
     DATA_DIR,
     DEALS_PATH,
+    LAST_UPDATED_STATE_PATH,
     MAX_PAGES,
     PAGE_SIZE,
     REQUEST_DELAY,
@@ -180,20 +181,51 @@ def atomic_write_json(path: Path, data: list[dict]):
 
 
 def load_previous_deals() -> dict[str, dict]:
-    """Load existing deals.json and return a lookup dict by product_code."""
+    """Load previous price/stock state for last_updated comparison.
+
+    Reads from the compact last_updated_state.json (only the fields needed
+    for comparison). Falls back to deals.json for backward compatibility.
+    """
+    if LAST_UPDATED_STATE_PATH.exists():
+        try:
+            with open(LAST_UPDATED_STATE_PATH, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            log.info(f"Loaded {len(state)} previous items from last_updated_state.json")
+            return state
+        except (json.JSONDecodeError, KeyError) as e:
+            log.warning(f"Failed to load last_updated_state.json: {e}")
+
     if not DEALS_PATH.exists():
-        log.info("No previous deals.json found, all items will be marked as new")
+        log.info("No previous state found, all items will be marked as new")
         return {}
 
     try:
         with open(DEALS_PATH, "r", encoding="utf-8") as f:
             previous = json.load(f)
         lookup = {d["product_code"]: d for d in previous if d.get("product_code")}
-        log.info(f"Loaded {len(lookup)} previous deals for last_updated comparison")
+        log.info(f"Loaded {len(lookup)} previous deals from deals.json (legacy fallback)")
         return lookup
     except (json.JSONDecodeError, KeyError) as e:
-        log.warning(f"Failed to load previous deals.json: {e}")
+        log.warning(f"Failed to load deals.json: {e}")
         return {}
+
+
+def save_last_updated_state(deals: list[dict]):
+    """Write compact price/stock state so next run can compute last_updated."""
+    state = {
+        d["product_code"]: {
+            "original_price": d["original_price"],
+            "sale_price": d["sale_price"],
+            "in_stock": d["in_stock"],
+            "last_updated": d.get("last_updated", d.get("scraped_date", "")),
+        }
+        for d in deals
+        if d.get("product_code")
+    }
+    LAST_UPDATED_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(LAST_UPDATED_STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, separators=(",", ":"))
+    log.info(f"Saved {len(state)} items to last_updated_state.json")
 
 
 def apply_last_updated(
@@ -487,6 +519,7 @@ async def run_streaming_processor():
     log.info(f"Total unique deals: {len(final_deals)}")
 
     atomic_write_json(DEALS_PATH, final_deals)
+    save_last_updated_state(final_deals)
     upload_to_r2(final_deals)
 
     if failed_categories:

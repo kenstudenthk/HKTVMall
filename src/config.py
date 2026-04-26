@@ -8,6 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_PRODUCTS_PATH = DATA_DIR / "raw_products.json"
 DEALS_PATH = DATA_DIR / "deals.json"
+LAST_UPDATED_STATE_PATH = DATA_DIR / "last_updated_state.json"
 
 # --- HKTVmall cate-search API ---
 CATE_SEARCH_API_URL = "https://cate-search.hktvmall.com/query/products"
