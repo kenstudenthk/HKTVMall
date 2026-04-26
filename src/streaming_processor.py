@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import date
@@ -58,6 +59,25 @@ def _safe_float(obj: dict | None, key: str = "value") -> float | None:
         return float(val)
     except (ValueError, TypeError):
         return None
+
+
+def _extract_weight(product_name: str) -> float | None:
+    """Extract weight from product name and return in grams."""
+    if not product_name:
+        return None
+    match = re.search(r'([\d.]+)\s*(?:kg|千克)', product_name, re.IGNORECASE)
+    if match:
+        return float(match.group(1)) * 1000
+    match = re.search(r'([\d.]+)\s*(?:lb|磅)', product_name, re.IGNORECASE)
+    if match:
+        return float(match.group(1)) * 453.592
+    match = re.search(r'([\d.]+)\s*(?:oz|安士)', product_name, re.IGNORECASE)
+    if match:
+        return float(match.group(1)) * 28.3495
+    match = re.search(r'([\d.]+)\s*(?:g|克)(?!\w)', product_name, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return None
 
 
 def _normalize_product(product: dict) -> dict:
@@ -114,13 +134,15 @@ def process_product(raw: dict, scraped_date: str) -> dict | None:
     stock_status = stock_info.get("stockLevelStatus", {})
     in_stock = stock_status.get("code", "") == "inStock"
 
+    product_name = raw.get("name", "")
     return {
         "product_code": raw.get("code", ""),
-        "product_name": raw.get("name", ""),
+        "product_name": product_name,
         "brand": raw.get("brandName", ""),
         "original_price": original_price,
         "sale_price": sale_price,
         "discount_pct": discount_pct,
+        "weight_grams": _extract_weight(product_name),
         "category": raw.get("_category", "unknown"),
         "image_url": image_url,
         "product_url": product_url,

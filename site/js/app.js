@@ -551,6 +551,7 @@ function createCardHTML(deal) {
       <div class="card-footer">
         <span class="discount-badge js-discount-badge">-${discountPct}%</span>
         <span class="stock-badge ${stockClass} js-stock-badge">${stockText}</span>
+        ${deal.weight_grams != null ? `<span class="weight-badge">${escapeHTML(formatWeight(deal.weight_grams))}</span>` : ""}
       </div>
       ${deal.last_updated ? `<div class="card-updated">${escapeHTML(formatLastUpdated(deal.last_updated))}</div>` : ""}
     </div>
@@ -854,6 +855,12 @@ function formatScrapedDate(dateStr) {
 }
 
 // === Per-item Date Formatting ===
+function formatWeight(grams) {
+  if (grams == null) return "";
+  if (grams >= 1000) return `${+(grams / 1000).toFixed(2)}kg`;
+  return `${Math.round(grams)}g`;
+}
+
 function formatLastUpdated(dateStr) {
   if (!dateStr) return "";
 
