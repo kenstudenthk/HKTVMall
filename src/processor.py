@@ -21,7 +21,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
 def _safe_float(obj: dict | None, key: str = "value") -> float | None:
     """Safely extract a float from a nested price dict."""
     if obj is None:
@@ -35,32 +34,32 @@ def _safe_float(obj: dict | None, key: str = "value") -> float | None:
         return None
 
 
-def _extract_weight(product_name: str) -> float | None:
-    """Extract weight from product name and return in grams.
+def _extract_weight(text: str) -> float | None:
+    """Extract weight from product text and return in grams.
 
     Supports: kg, lb, oz, g (case-insensitive).
     Returns None if no weight found.
     """
-    if not product_name:
+    if not text:
         return None
 
     # Try kg first (e.g., "1.18千克", "2.7kg", "6lb/2.7kg")
-    match = re.search(r'([\d.]+)\s*(?:kg|千克)', product_name, re.IGNORECASE)
+    match = re.search(r'(\d+(?:\.\d+)?)\s*(?:kg|kgs|公斤|千克)', text, re.IGNORECASE)
     if match:
         return float(match.group(1)) * 1000  # convert to grams
 
     # Try lb (e.g., "4 lb", "6lb", "4lb")
-    match = re.search(r'([\d.]+)\s*(?:lb|磅)', product_name, re.IGNORECASE)
+    match = re.search(r'(\d+(?:\.\d+)?)\s*(?:lb|lbs|磅)', text, re.IGNORECASE)
     if match:
         return float(match.group(1)) * 453.592  # convert to grams
 
     # Try oz (e.g., "4.5oz", "12 oz")
-    match = re.search(r'([\d.]+)\s*(?:oz|安士)', product_name, re.IGNORECASE)
+    match = re.search(r'(\d+(?:\.\d+)?)\s*(?:oz|安士)', text, re.IGNORECASE)
     if match:
         return float(match.group(1)) * 28.3495  # convert to grams
 
     # Try g standalone (e.g., "85g", "300 g")
-    match = re.search(r'([\d.]+)\s*(?:g|克)(?!\w)', product_name, re.IGNORECASE)
+    match = re.search(r'(\d+(?:\.\d+)?)\s*(?:g|gram|grams|克)(?!\w)', text, re.IGNORECASE)
     if match:
         return float(match.group(1))
 
@@ -102,10 +101,15 @@ def process_product(raw: dict, scraped_date: str) -> dict | None:
     stock_info = raw.get("stock", {})
     stock_status = stock_info.get("stockLevelStatus", {})
     in_stock = stock_status.get("code", "") == "inStock"
+    weight_text = " ".join(
+        str(raw.get(key) or "")
+        for key in ("packingSpec", "name", "summary", "description")
+    )
 
+    product_name = raw.get("name", "")
     return {
         "product_code": raw.get("code", ""),
-        "product_name": raw.get("name", ""),
+        "product_name": product_name,
         "brand": raw.get("brandName", ""),
         "original_price": original_price,
         "sale_price": sale_price,
@@ -115,7 +119,7 @@ def process_product(raw: dict, scraped_date: str) -> dict | None:
         "product_url": product_url,
         "in_stock": in_stock,
         "scraped_date": scraped_date,
-        "weight_grams": _extract_weight(raw.get("name", "")),
+        "weight_grams": _extract_weight(weight_text),
     }
 
 
