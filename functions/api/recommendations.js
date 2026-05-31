@@ -96,6 +96,7 @@ export async function onRequestGet(context) {
       ...cached,
       cached: true,
       show_feedback_prompt: shouldShowFeedback(viewRow),
+      view_count: viewRow?.view_count ?? 0,
     });
   }
 
@@ -201,6 +202,7 @@ export async function onRequestGet(context) {
   return jsonResponse({
     ...result,
     show_feedback_prompt: shouldShowFeedback(viewRow),
+    view_count: viewRow?.view_count ?? 0,
   });
 }
 
