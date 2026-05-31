@@ -21,8 +21,8 @@ export async function onRequestPost(context) {
   await env.REC_DB.prepare(`
     INSERT INTO recommendation_views (user_id, view_count, last_feedback_at)
     VALUES (?, 0, ?)
-    ON CONFLICT(user_id) DO UPDATE SET last_feedback_at = excluded.last_feedback_at
-  `).bind(user_id, now).run();
+    ON CONFLICT(user_id) DO UPDATE SET last_feedback_at = ?
+  `).bind(user_id, now, now).run();
 
   return jsonResponse({ success: true });
 }
