@@ -8,46 +8,64 @@ export async function onRequestGet(context) {
   const userId = url.searchParams.get("user_id");
 
   if (!userId) return jsonResponse({ error: "user_id required" }, 400);
-  if (typeof userId !== "string" || userId.length > 100) return jsonResponse({ error: "Invalid user_id" }, 400);
+  if (typeof userId !== "string" || userId.length > 100)
+    return jsonResponse({ error: "Invalid user_id" }, 400);
   if (!env.REC_DB) return jsonResponse({ error: "D1 not configured" }, 503);
-  if (!env.ANTHROPIC_API_KEY) return jsonResponse({ error: "ANTHROPIC_API_KEY not configured" }, 503);
-  if (!env.DEALS_BUCKET) return jsonResponse({ error: "DEALS_BUCKET not configured" }, 503);
+  if (!env.ANTHROPIC_API_KEY)
+    return jsonResponse({ error: "ANTHROPIC_API_KEY not configured" }, 503);
+  if (!env.DEALS_BUCKET)
+    return jsonResponse({ error: "DEALS_BUCKET not configured" }, 503);
 
   const now = new Date().toISOString();
 
   // Upsert user
   await env.REC_DB.prepare(
-    `INSERT OR IGNORE INTO rec_users (user_id, created_at, last_seen_at) VALUES (?,?,?)`
-  ).bind(userId, now, now).run();
+    `INSERT OR IGNORE INTO rec_users (user_id, created_at, last_seen_at) VALUES (?,?,?)`,
+  )
+    .bind(userId, now, now)
+    .run();
   await env.REC_DB.prepare(
-    `UPDATE rec_users SET last_seen_at = ? WHERE user_id = ?`
-  ).bind(now, userId).run();
+    `UPDATE rec_users SET last_seen_at = ? WHERE user_id = ?`,
+  )
+    .bind(now, userId)
+    .run();
 
   // Track view count (for feedback prompt)
-  await env.REC_DB.prepare(`
+  await env.REC_DB.prepare(
+    `
     INSERT INTO recommendation_views (user_id, view_count) VALUES (?, 1)
     ON CONFLICT(user_id) DO UPDATE SET view_count = view_count + 1
-  `).bind(userId).run();
+  `,
+  )
+    .bind(userId)
+    .run();
 
   const viewRow = await env.REC_DB.prepare(
-    `SELECT view_count, last_feedback_at FROM recommendation_views WHERE user_id = ?`
-  ).bind(userId).first();
+    `SELECT view_count, last_feedback_at FROM recommendation_views WHERE user_id = ?`,
+  )
+    .bind(userId)
+    .first();
 
   // Fetch latest deals from R2
   const dealsObj = await env.DEALS_BUCKET.get("deals.json");
-  if (!dealsObj) return jsonResponse({ error: "deals.json not found in R2" }, 404);
+  if (!dealsObj)
+    return jsonResponse({ error: "deals.json not found in R2" }, 404);
   const dealsData = await dealsObj.json();
   const allDeals = dealsData.deals ?? [];
   const scrapedDate = dealsData.scraped_date ?? "";
 
   // Load interest history
-  const interestRows = await env.REC_DB.prepare(`
+  const interestRows = await env.REC_DB.prepare(
+    `
     SELECT event_type, product_code, brand, category, weight_grams,
            sale_price, discount_pct, in_stock, product_name, created_at
     FROM interest_events
     WHERE user_id = ?
     ORDER BY created_at ASC
-  `).bind(userId).all();
+  `,
+  )
+    .bind(userId)
+    .all();
   const events = interestRows.results ?? [];
 
   // Net interest set: apply add/remove events in order
@@ -58,14 +76,17 @@ export async function onRequestGet(context) {
   }
   const interests = Object.values(interestMap);
   const interestCount = interests.length;
-  const addCount = events.filter(e => e.event_type === "add").length;
+  const addCount = events.filter((e) => e.event_type === "add").length;
 
   // Cache check
   const cacheRow = await env.REC_DB.prepare(
-    `SELECT * FROM recommendation_cache WHERE user_id = ?`
-  ).bind(userId).first();
+    `SELECT * FROM recommendation_cache WHERE user_id = ?`,
+  )
+    .bind(userId)
+    .first();
 
-  const cacheValid = cacheRow &&
+  const cacheValid =
+    cacheRow &&
     cacheRow.deals_scraped_date === scrapedDate &&
     cacheRow.interest_count === addCount;
 
@@ -81,7 +102,7 @@ export async function onRequestGet(context) {
   // Build recommendations via Claude
   const isColdStart = interestCount < COLD_START_THRESHOLD;
   const topDeals = [...allDeals]
-    .filter(d => d.in_stock !== false)
+    .filter((d) => d.in_stock !== false)
     .sort((a, b) => (b.discount_pct ?? 0) - (a.discount_pct ?? 0))
     .slice(0, MAX_DEALS_TO_CLAUDE);
 
@@ -108,19 +129,32 @@ export async function onRequestGet(context) {
   }
 
   const claudeData = await claudeRes.json();
-  const rawText = claudeData.content?.[0]?.text ?? "[]";
+  const rawText = claudeData.content?.[0]?.text ?? "";
 
-  let recommendedCodes;
-  try {
-    recommendedCodes = JSON.parse(rawText.match(/\[[\s\S]*\]/)?.[0] ?? "[]");
-  } catch {
-    recommendedCodes = [];
+  let recommendedCodes = [];
+  const jsonMatch = rawText.match(/\[[\s\S]*\]/)?.[0];
+  if (!jsonMatch) {
+    console.error(
+      "Claude response had no JSON array. Raw text:",
+      rawText.slice(0, 200),
+    );
+  } else {
+    try {
+      recommendedCodes = JSON.parse(jsonMatch);
+    } catch (e) {
+      console.error(
+        "Failed to parse Claude JSON array:",
+        e.message,
+        "Match:",
+        jsonMatch.slice(0, 200),
+      );
+    }
   }
 
   // Enrich with full deal data
-  const dealMap = Object.fromEntries(allDeals.map(d => [d.product_code, d]));
+  const dealMap = Object.fromEntries(allDeals.map((d) => [d.product_code, d]));
   const items = recommendedCodes
-    .map(r => {
+    .map((r) => {
       const d = dealMap[r.product_code];
       if (!d) return null;
       return {
@@ -150,7 +184,8 @@ export async function onRequestGet(context) {
   };
 
   // Save to cache
-  await env.REC_DB.prepare(`
+  await env.REC_DB.prepare(
+    `
     INSERT INTO recommendation_cache (user_id, deals_scraped_date, interest_count, recommendations_json, generated_at)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
@@ -158,9 +193,15 @@ export async function onRequestGet(context) {
       interest_count = excluded.interest_count,
       recommendations_json = excluded.recommendations_json,
       generated_at = excluded.generated_at
-  `).bind(userId, scrapedDate, addCount, JSON.stringify(result), now).run();
+  `,
+  )
+    .bind(userId, scrapedDate, addCount, JSON.stringify(result), now)
+    .run();
 
-  return jsonResponse({ ...result, show_feedback_prompt: shouldShowFeedback(viewRow) });
+  return jsonResponse({
+    ...result,
+    show_feedback_prompt: shouldShowFeedback(viewRow),
+  });
 }
 
 function shouldShowFeedback(viewRow) {
@@ -171,7 +212,7 @@ function shouldShowFeedback(viewRow) {
 
 function buildPrompt(interests, topDeals, isColdStart) {
   const dealsJson = JSON.stringify(
-    topDeals.map(d => ({
+    topDeals.map((d) => ({
       product_code: d.product_code,
       product_name: d.product_name,
       brand: d.brand,
@@ -180,7 +221,7 @@ function buildPrompt(interests, topDeals, isColdStart) {
       sale_price: d.sale_price,
       weight_grams: d.weight_grams,
       in_stock: d.in_stock,
-    }))
+    })),
   );
 
   if (isColdStart) {
@@ -196,13 +237,13 @@ Return ONLY a JSON array (no other text) with this shape:
   }
 
   const profileJson = JSON.stringify(
-    interests.map(i => ({
+    interests.map((i) => ({
       brand: i.brand,
       category: i.category,
       weight_grams: i.weight_grams,
       sale_price: i.sale_price,
       discount_pct: i.discount_pct,
-    }))
+    })),
   );
 
   return `You are a pet food deal recommender. Based on the user's saved interests, recommend the most relevant current deals.
@@ -230,7 +271,8 @@ export async function onRequestOptions() {
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
-    status, headers: { "Content-Type": "application/json", ...corsHeaders() },
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders() },
   });
 }
 
