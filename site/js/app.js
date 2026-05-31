@@ -25,6 +25,68 @@ const state = {
   },
 };
 
+// === Recommendation / Interest state ===
+function getOrCreateUserId() {
+  let id = localStorage.getItem("rec_user_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("rec_user_id", id);
+  }
+  return id;
+}
+
+function loadInterestSet() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("hktv_interests") ?? "[]"));
+  } catch { return new Set(); }
+}
+
+function saveInterestSet(set) {
+  localStorage.setItem("hktv_interests", JSON.stringify([...set]));
+}
+
+const interestState = {
+  userId: getOrCreateUserId(),
+  codes: loadInterestSet(),
+};
+
+async function toggleInterest(productCode) {
+  const deal = state.allDeals.find(d => d.product_code === productCode);
+  if (!deal) return;
+
+  const isAdding = !interestState.codes.has(productCode);
+  if (isAdding) interestState.codes.add(productCode);
+  else interestState.codes.delete(productCode);
+
+  saveInterestSet(interestState.codes);
+
+  // Update button appearance immediately (optimistic UI)
+  document.querySelectorAll(`.interest-btn[data-product-code="${CSS.escape(productCode)}"]`).forEach(btn => {
+    btn.classList.toggle("interested", isAdding);
+    btn.title = isAdding ? "Remove from interests" : "Save to interests";
+    btn.setAttribute("aria-label", btn.title);
+  });
+
+  // Fire and forget — do not await
+  fetch("/api/interests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: interestState.userId,
+      event_type: isAdding ? "add" : "remove",
+      product_code: deal.product_code,
+      product_name: deal.product_name,
+      brand: deal.brand,
+      category: deal.category,
+      weight_grams: deal.weight_grams ?? null,
+      sale_price: deal.sale_price,
+      original_price: deal.original_price,
+      discount_pct: deal.discount_pct,
+      in_stock: deal.in_stock,
+    }),
+  }).catch(err => console.warn("Interest sync failed:", err));
+}
+
 // === DOM references ===
 const els = {
   loader: document.getElementById("loader"),
@@ -532,6 +594,7 @@ function createCardHTML(deal) {
   const discountPct = Math.round(deal.discount_pct);
   const stockClass = deal.in_stock ? "in-stock" : "out-of-stock";
   const stockText = deal.in_stock ? "In Stock" : "Out of Stock";
+  const isInterested = interestState.codes.has(deal.product_code);
 
   const placeholderSVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' fill='%23ccc'%3E%3Crect width='120' height='120' fill='%23f5f5f5'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23aaa'%3ENo Image%3C/text%3E%3C/svg%3E`;
 
@@ -540,6 +603,10 @@ function createCardHTML(deal) {
       <img src="${imgUrl}" alt="${name}" loading="lazy"
            onerror="this.onerror=null;this.src='${placeholderSVG}'">
       <button class="refresh-btn" title="Refresh price" aria-label="Refresh price">&#x21BB;</button>
+      <button class="interest-btn ${isInterested ? 'interested' : ''}"
+        data-product-code="${productCode}"
+        title="${isInterested ? 'Remove from interests' : 'Save to interests'}"
+        aria-label="${isInterested ? 'Remove from interests' : 'Save to interests'}">&#x2665;</button>
     </div>
     <div class="card-body">
       <div class="card-name" title="${name}">${name}</div>
@@ -751,6 +818,16 @@ function bindEvents() {
       setTimeout(() => btn.classList.remove("error"), 2000);
       console.error("Refresh failed:", err);
     }
+  });
+
+  // Interest button (delegated)
+  els.productGrid.addEventListener("click", (e) => {
+    const btn = e.target.closest(".interest-btn");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const code = btn.dataset.productCode;
+    if (code) toggleInterest(code);
   });
 }
 

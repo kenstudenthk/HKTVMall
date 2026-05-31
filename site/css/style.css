@@ -507,6 +507,35 @@ select {
   }
 }
 
+/* === Interest / Heart Button === */
+.interest-btn {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(255,255,255,0.9);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  cursor: pointer;
+  color: #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, transform 0.1s;
+  z-index: 2;
+}
+
+.interest-btn:hover {
+  color: var(--color-accent);
+  transform: scale(1.15);
+}
+
+.interest-btn.interested {
+  color: var(--color-accent);
+}
+
 .card-image img {
   max-width: 100%;
   max-height: 100%;
