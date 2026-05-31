@@ -20,6 +20,9 @@ export async function onRequestPost(context) {
   if (!user_id || !event_type || !product_code) {
     return jsonResponse({ success: false, error: "Missing required fields" }, 400);
   }
+  if (typeof user_id !== "string" || user_id.length > 100) {
+    return jsonResponse({ success: false, error: "Invalid user_id" }, 400);
+  }
   if (event_type !== "add" && event_type !== "remove") {
     return jsonResponse({ success: false, error: "event_type must be add or remove" }, 400);
   }
