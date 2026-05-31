@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>For You — HKTVmall Pet Food</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>HKTVmall Pet Food Deals</h1>
+    <nav class="site-nav">
+      <a href="index.html" class="nav-link">Deals</a>
+      <a href="recommendations.html" class="nav-link active">⭐ For You</a>
+    </nav>
+  </header>
+
+  <div id="rec-status" class="rec-status-bar hidden"></div>
+
+  <div class="rec-page-header">
+    <h2 id="rec-title">Recommendations for You</h2>
+    <p id="rec-subtitle" class="rec-subtitle"></p>
+    <p id="rec-generated-at" class="rec-generated-at"></p>
+  </div>
+
+  <div id="rec-loader" class="loader">Loading recommendations...</div>
+  <div id="rec-grid" class="product-grid"></div>
+
+  <!-- Feedback Dialog -->
+  <div id="feedback-dialog" class="feedback-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+    <div class="feedback-dialog-inner">
+      <p id="feedback-title" class="feedback-question">Are these recommendations helpful?</p>
+      <div class="feedback-buttons">
+        <button class="feedback-btn" data-rating="satisfied">👍 Yes, helpful</button>
+        <button class="feedback-btn" data-rating="unsatisfied">👎 Not really</button>
+        <button class="feedback-btn feedback-btn--skip" data-rating="skip">Skip</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/recommendations.js"></script>
+</body>
+</html>
